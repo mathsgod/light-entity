@@ -1,0 +1,33 @@
+{
+  "name": "mathsgod/php-entity",
+  "description": "A PDO-based entity ORM built on php-linq",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.2",
+    "ext-pdo": "*",
+    "mathsgod/php-linq": "@dev"
+  },
+  "repositories": [
+    {
+      "type": "path",
+      "url": "../php-linq"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "PhpEntity\\": "src/"
+    }
+  },
+  "scripts": {
+    "test": "phpunit"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "PhpEntity\\Tests\\": "tests/"
+    }
+  }
+}
