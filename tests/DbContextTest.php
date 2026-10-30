@@ -10,7 +10,7 @@ use PDOException;
 use PhpEntity\DbContext;
 use PhpEntity\EntityMapping;
 use PhpLinq\Expr;
-use PhpLinq\Sql\SqliteDialect;
+use PhpEntity\Sql\SqliteDialect;
 use PHPUnit\Framework\TestCase;
 
 final class User

@@ -6,7 +6,7 @@ namespace PhpEntity;
 
 use PDO;
 use PhpLinq\Queryable;
-use PhpLinq\Sql\SqlDialect;
+use PhpEntity\Sql\SqlDialect;
 
 class DbContext
 {
@@ -20,8 +20,8 @@ class DbContext
     public function __construct(private PDO $pdo, ?SqlDialect $dialect = null, iterable $mappings = [])
     {
         $this->dialect = $dialect ?? match ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) {
-            'sqlite' => new \PhpLinq\Sql\SqliteDialect(),
-            'mysql' => new \PhpLinq\Sql\MySqlDialect(),
+            'sqlite' => new \PhpEntity\Sql\SqliteDialect(),
+            'mysql' => new \PhpEntity\Sql\MySqlDialect(),
             default => throw new \LogicException('Specify a dialect for this database driver.'),
         };
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

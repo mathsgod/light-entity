@@ -7,9 +7,9 @@ namespace PhpEntity;
 use PDO;
 use PhpLinq\IQueryProvider;
 use PhpLinq\Expression\Expression;
-use PhpLinq\Sql\CompiledQuery;
-use PhpLinq\Sql\SqlDialect;
-use PhpLinq\Sql\SqlQueryCompiler;
+use PhpEntity\Sql\CompiledQuery;
+use PhpEntity\Sql\SqlDialect;
+use PhpEntity\Sql\SqlQueryCompiler;
 
 final readonly class SqlQueryProvider implements IQueryProvider
 {

@@ -7,7 +7,7 @@ namespace PhpEntity\Tests;
 use PDO;
 use PhpLinq\Expr;
 use PhpLinq\Queryable;
-use PhpLinq\Sql\SqliteDialect;
+use PhpEntity\Sql\SqliteDialect;
 use PhpEntity\SqlQueryProvider;
 use PHPUnit\Framework\TestCase;
 

@@ -23,6 +23,39 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->with($this->query->where($predicate));
     }
 
+    /** Raw row query for composition; results are not tracked entities. */
+    public function asQueryable(): Queryable
+    {
+        return $this->query;
+    }
+
+    /** Returns projected values without tracking them as entities. */
+    public function select(ValueExpression $selector): Queryable
+    {
+        return $this->query->select($selector);
+    }
+
+    /** Result fields use outer.* and inner.*; keys are relative to each DbSet. */
+    public function join(
+        self $inner,
+        ValueExpression $outerKey,
+        ValueExpression $innerKey,
+        ValueExpression $resultSelector,
+    ): Queryable
+    {
+        return $this->query->join($inner->query, $outerKey, $innerKey, $resultSelector);
+    }
+
+    public function leftJoin(
+        self $inner,
+        ValueExpression $outerKey,
+        ValueExpression $innerKey,
+        ValueExpression $resultSelector,
+    ): Queryable
+    {
+        return $this->query->leftJoin($inner->query, $outerKey, $innerKey, $resultSelector);
+    }
+
     public function orderBy(ValueExpression $selector): self
     {
         return $this->with($this->query->orderBy($selector));

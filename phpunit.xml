@@ -10,6 +10,7 @@
     <testsuites>
         <testsuite name="php-entity">
             <directory>tests</directory>
+            <exclude>tests/integration</exclude>
         </testsuite>
     </testsuites>
 </phpunit>

@@ -81,9 +81,9 @@ Explicit `EntityMapping` objects remain an optional override for existing caller
 
 Keep this repository alongside `php-linq` and run `composer install`. The path repository in `composer.json` is for local development; consuming applications must configure their own path repository until a suitable php-linq release is available.
 
-Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS; it has not yet been integration-tested against a live MySQL server.
+Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite currently runs against SQLite.
 
-No relationships, migrations, custom column aliases, composite keys, optimistic concurrency, async operations, projections or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
+No relationship loading, migrations, custom entity column aliases, composite entity primary keys, optimistic concurrency, async operations or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
 
 ## Adding multiple entities
 
@@ -103,12 +103,21 @@ $db->saveChanges();
 
 `PhpEntity\SqlQueryProvider` implements `PhpLinq\IQueryProvider` and executes php-linq expression trees through PDO.
 It returns rows/scalars directly; use `DbSet` for tracked entity objects.
-The SQL compiler and dialects currently remain in php-linq.
+SQL compilation and dialects live in this package under `PhpEntity\Sql`; php-linq supplies the database-independent query operators and expression trees.
+
+The available dialects are `MySqlDialect`, `SqlServerDialect`,
+`PostgreSqlDialect`, and `SqliteDialect`. They handle identifier quoting and
+pagination syntax and emit query values as bound parameters. Dialect availability
+does not imply automatic schema discovery support for every database.
+
+SQL compiler and dialect classes have moved from `PhpLinq\Sql` to
+`PhpEntity\Sql`; update those imports when upgrading. JOIN SQL translation also lives in this package.
+
 
 ```php
 use PhpEntity\SqlQueryProvider;
 use PhpLinq\Queryable;
-use PhpLinq\Sql\MySqlDialect;
+use PhpEntity\Sql\MySqlDialect;
 
 $users = Queryable::from(
     new SqlQueryProvider($pdo, new MySqlDialect()),
@@ -225,3 +234,98 @@ are immediately available from the model without schema queries.
 
 Use a new context after schema changes to refresh metadata. This model exposes
 current entity/column mappings; relationship metadata is not implemented yet.
+
+## JOIN queries
+
+`DbSet::join()` and `leftJoin()` return a `PhpLinq\Queryable` of projected
+arrays or scalar values, not tracked entities. Both sets must belong to the
+same context. No relationship configuration is required.
+
+```php
+$orders = $db->set(Order::class);
+$customers = $db->set(Customer::class);
+
+$rows = $orders->leftJoin(
+    $customers->where(Expr::eq(Expr::field('active'), 1)),
+    Expr::field('customer_id'), // Key relative to the outer source.
+    Expr::field('id'),          // Key relative to the inner source.
+    Expr::projection([
+        'order_id' => 'outer.id',
+        'customer_name' => 'inner.name',
+    ]),
+)->where(Expr::neq(Expr::field('customer_name'), null))
+  ->orderBy(Expr::field('order_id'))
+  ->take(20)
+  ->toArray();
+```
+
+`join()` produces INNER JOIN; `leftJoin()` preserves unmatched outer rows and
+returns null for their inner fields. Null keys do not match, including null
+against null. Duplicate matches produce multiple result rows. Key selectors
+may use `Expr::projection()` for composite keys with matching member names and
+order; this does not add composite entity primary-key support.
+
+Result selectors use `outer.*` and `inner.*`. Subsequent filters, ordering and
+projections address the selected result names (`order_id`, `customer_name` in
+the example). Sources can be filtered, projected to named fields, or paged
+before joining. Source ordering does not guarantee JOIN result ordering;
+apply `orderBy()` to the result. Scalar result selectors are supported, but
+field-based composition and further joins require a named result projection.
+
+For self joins, pass the same set as both sources. For chained joins, use the
+next set's `asQueryable()` as the inner source of the returned Queryable:
+
+```php
+$rows = $orders->join(
+    $customers,
+    Expr::field('customer_id'),
+    Expr::field('id'),
+    Expr::projection(['order_id' => 'outer.id', 'region_id' => 'inner.region_id']),
+)->join(
+    $db->set(Region::class)->asQueryable(),
+    Expr::field('region_id'),
+    Expr::field('id'),
+    Expr::projection(['order_id' => 'outer.order_id', 'region' => 'inner.name']),
+)->toArray();
+```
+
+`asQueryable()` exposes raw database rows for composition without entity
+tracking. `DbSet::select()` likewise returns a projected Queryable. These APIs
+do not implement `Include()`, navigation properties or relationship loading.
+
+## PHPUnit with Docker MySQL 8
+
+With Docker, Docker Compose, PHP `pdo_mysql` and Composer dependencies installed:
+
+```sh
+composer test:mysql
+```
+
+This starts `mysql:8.0` on loopback port 33386, waits for readiness, runs the
+shared JOIN contract through PHPUnit using native PDO prepared statements,
+and removes the container/network on exit. MySQL data lives in a temporary
+filesystem. Each database-backed test creates a random database and drops it
+in teardown; existing databases are not modified. The ordinary `composer test`
+continues to use SQLite and does not start Docker.
+
+To change the local port or pass PHPUnit arguments:
+
+```sh
+PHP_ENTITY_MYSQL_PORT=33387 composer test:mysql
+composer test:mysql -- --filter testJoinExecutionAndTerminalOperators
+```
+
+To use an already-running local MySQL 8 instead:
+
+```sh
+PHP_ENTITY_MYSQL_DSN='mysql:host=127.0.0.1;port=33386;charset=utf8mb4' \
+PHP_ENTITY_MYSQL_USER=root \
+PHP_ENTITY_MYSQL_PASSWORD=php_entity_test \
+vendor/bin/phpunit -c phpunit.mysql.xml
+```
+
+The test account needs permission to create and drop its generated databases.
+This suite verifies MySQL 8 specifically, including INNER/LEFT joins, duplicate
+and null keys, composite join keys, self/chained joins, filtered and paged
+sources, projections, aggregates, schema discovery and DbSet tracking. It does
+not run the entire SQLite persistence suite against MySQL.
