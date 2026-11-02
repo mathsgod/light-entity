@@ -69,7 +69,7 @@ Unknown dynamic properties are not persisted. Only discovered columns participat
 
 ## Context behavior
 
-`DbSet` supports `where`, `orderBy`, `orderByDescending`, `skip`, `take`, `first`, `find`, `any`, `count`, `toArray`, and iteration. `first()` throws `UnderflowException` when empty. Root `find()` checks the identity map before querying and returns null when missing.
+`DbSet` supports `include`, `where`, `orderBy`, `orderByDescending`, `skip`, `take`, `first`, `find`, `any`, `count`, `toArray`, and iteration. `first()` throws `UnderflowException` when empty. Root `find()` checks the identity map before querying and returns null when missing.
 
 Entities are tracked by identity and snapshots. Re-querying a tracked key returns the same object without refreshing pending changes. `add`, `addRange` and `remove` are deferred; removing a pending insert cancels it.
 
@@ -447,7 +447,7 @@ and `saveChanges()`, including dynamic rows. Plain classes that do not extend
 Missing collection rows return an empty `DbSet`; missing singular rows or nullable
 FKs return `null`. Unknown or ambiguous relationships throw
 `BadMethodCallException`. Getter calls accept no arguments. Schema metadata is
-cached per context; create a new context after changing the schema. Results are
+cached per context; create a new context after changing the schema. Without eager loading, results are
 queried on demand so changing an entity's FK changes the next getter result.
 
 With multiple FKs, use a column-based getter such as `getBillingClient()` for
@@ -463,5 +463,73 @@ $client->getPurchases();
 The column list identifies the FK on its owning table in declaration order,
 including composite FKs. Overrides still require a real database FK. Naming uses
 basic English singularization (including people/person and children/child);
-use explicit mappings for other naming conventions. Relationship getters perform
+use explicit mappings for other naming conventions. Relationship getters without eager loading perform
 lazy queries; looping over many parents can produce one query per parent.
+
+## Eager loading relationships
+
+Use `include()` to batch-load relationships before reading their getters:
+
+```php
+$clients = $db->set(Client::class)
+    ->include('Orders.Notes')
+    ->toArray();
+
+foreach ($clients as $client) {
+    foreach ($client->getOrders() as $order) {
+        $notes = $order->getNotes()->toArray(); // Already loaded.
+    }
+}
+```
+
+Preloaded getters use context-scoped results; additional query operators such as
+`where()` issue a new SQL query. Includes preserve normal identity tracking and
+`saveChanges()` behavior. See [Eager Loading](docs/include.md) for batching,
+cache lifetime, pagination, explicit FK mappings, and limitations.
+
+## Entity entries and save interceptors
+
+Use EF Core-style entry names to inspect tracking state and snapshots:
+
+```php
+use PhpEntity\EntityState;
+
+$entry = $db->entry($order);
+$entry->state;          // EntityState::Unchanged, Modified, Added, Deleted, or Detached.
+$entry->originalValues; // Snapshot array copy.
+$entry->currentValues;  // Current mapped values array copy.
+
+foreach ($db->changeTracker->entries(Order::class) as $entry) {
+    // Inspect entries or make validated state transitions.
+}
+```
+
+Register a `SaveChangesInterceptor` with `$db->addInterceptors($interceptor)` or
+`new DbContext($pdo, interceptors: [$interceptor])`. Override `savingChanges()`,
+`savedChanges()`, and/or `saveChangesFailed()` for timestamps, validation,
+soft deletion, or observing save results. Pre-save hook changes are detected
+before SQL runs. `savedChanges()` is not an outer transaction commit notification.
+
+Tracking lives in `ChangeTracker`; SQL writes and save lifecycle coordination
+live in `SaveChangesExecutor`. `DbContext` delegates these responsibilities.
+`PropertyEntry` is deferred. See [Entity Entries](docs/entity-entries.md) and
+[Save Interceptors](docs/save-interceptors.md) for examples and precise semantics.
+
+## NoTracking queries
+
+Use `asNoTracking()` to load entities without identity lookup or tracking snapshots:
+
+```php
+$users = $db->set(User::class)->asNoTracking()->toArray();
+
+$db->changeTracker->queryTrackingBehavior = QueryTrackingBehavior::NoTracking;
+$trackedUsers = $db->set(User::class)->asTracking()->toArray();
+```
+
+Import `PhpEntity\QueryTrackingBehavior` for the context setting. Query overrides
+are immutable and the last override wins. Includes and relationship getters inherit
+the source query's mode. NoTracking edits are not automatically saved, while
+explicit `add()`, `remove()`, or entry state assignments still opt into writes.
+Changing the default does not detach previously tracked entities.
+See [Query Tracking](docs/query-tracking.md) for cache behavior, explicit attachment,
+identity semantics, and performance considerations.

@@ -1,5 +1,10 @@
 # Relationship Entities and saveChanges() Change Tracking
 
+The examples below use the default `TrackAll` query behavior. Queries using
+`asNoTracking()` or the context's `NoTracking` default skip automatic tracking;
+see [Query Tracking](query-tracking.md).
+
+
 Entities loaded through the same `DbContext` are tracked automatically, including entities loaded through relationship getters. After modifying them, call `saveChanges()` on that context to persist the changes.
 
 ## Usage
@@ -32,7 +37,7 @@ When a row passes through `DbContext::materialize()`, the context:
 2. Returns the existing object if it is already tracked.
 3. Otherwise, creates an entity and records its object reference, mapping, state, and original field values.
 
-The implementation uses `SplObjectStorage`. The following example illustrates the stored information; it is not an actual API:
+`ChangeTracker` owns the tracking records in a `SplObjectStorage`. The following example illustrates the stored information; it is not an actual API:
 
 ```php
 // Conceptual example only.
@@ -114,7 +119,7 @@ foreach ($orders as $order) {
 }
 ```
 
-The set stores the query rather than a snapshot of its results. Re-enumerating it executes the query again; the context reuses already tracked entity objects where possible.
+Without eager loading, the set stores a query rather than a snapshot of its results. Re-enumerating it executes the query again; the context reuses already tracked entity objects where possible. A relationship preloaded with `include()` instead uses its loaded collection until invalidated; see [Eager Loading](include.md).
 
 ## Removing Selected Orders
 
@@ -172,3 +177,22 @@ Use `DbSet::remove()` followed by `saveChanges()` to delete a persisted order.
 - Snapshot comparison uses the values originally loaded by the context. It does not compare against the latest values written by other connections, and does not itself detect concurrent modification conflicts.
 
 Related implementation: [`DbContext`](../src/DbContext.php), [`DbSet`](../src/DbSet.php), and [`EntityMapping`](../src/EntityMapping.php).
+
+## Preloaded Relationships
+
+Relationships loaded with `include()` use the same entity tracking and save
+mechanism. Their collection getters return a `DbSet` backed by loaded results,
+so reading those results does not issue another query. Additional query operators
+create a new database query. Successful saves that perform writes invalidate the
+context's relationship caches. See [Eager Loading](include.md) for details.
+
+## Entry Access and Save Hooks
+
+`DbContext::entry()` exposes an `EntityEntry` with the entity, state, original
+values, and current values. `changeTracker->entries()` lists tracked entities.
+The tracker owns snapshots and identity records; `SaveChangesExecutor` owns SQL
+writes and save lifecycle coordination. The context delegates to these components.
+
+The save flow detects changes before `savingChanges()` hooks and again afterwards,
+so interceptor edits and state transitions participate in the same save.
+See [Entity Entries](entity-entries.md) and [Save Interceptors](save-interceptors.md).

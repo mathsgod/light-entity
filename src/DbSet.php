@@ -16,7 +16,30 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         private EntityMapping $mapping,
         private Queryable $query,
         private bool $root = true,
+        private array $includes = [],
+        private ?array $loaded = null,
+        private ?QueryTrackingBehavior $trackingBehavior = null,
     ) {}
+
+    /** Eager-load a relationship or a dotted path when entities are materialized. */
+    public function include(string $path): self
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/D', $path)) {
+            throw new \InvalidArgumentException('Include requires a non-empty relationship path.');
+        }
+        $paths = array_values(array_unique([...$this->includes, $path]));
+        return new self($this->context, $this->mapping, $this->query, $this->root, $paths, $this->loaded, $this->trackingBehavior);
+    }
+
+    public function asNoTracking(): self
+    {
+        return $this->withTracking(QueryTrackingBehavior::NoTracking);
+    }
+
+    public function asTracking(): self
+    {
+        return $this->withTracking(QueryTrackingBehavior::TrackAll);
+    }
 
     public function where(ValueExpression $predicate): self
     {
@@ -68,13 +91,25 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
 
     public function skip(int $count): self { return $this->with($this->query->skip($count)); }
     public function take(int $count): self { return $this->with($this->query->take($count)); }
-    public function count(): int { return $this->query->count(); }
-    public function any(?ValueExpression $predicate = null): bool { return $this->query->any($predicate); }
+    public function count(): int { return $this->loaded === null ? $this->query->count() : count($this->loaded); }
+    public function any(?ValueExpression $predicate = null): bool
+    {
+        return $this->loaded !== null && $predicate === null
+            ? $this->loaded !== [] : $this->query->any($predicate);
+    }
 
     /** @return T */
     public function first(?ValueExpression $predicate = null): object
     {
-        return $this->context->materialize($this->mapping, $this->query->first($predicate));
+        $tracking = $this->trackingMode();
+        if ($this->loaded !== null && $predicate === null) {
+            $entity = $this->loaded[0] ?? throw new \UnderflowException('The query has no elements.');
+        } else {
+            $this->context->validateIncludes($this->mapping, $this->includes);
+            $entity = $this->context->materialize($this->mapping, $this->query->first($predicate), $tracking);
+        }
+        $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking);
+        return $entity;
     }
 
     /**
@@ -87,11 +122,13 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
             throw new \LogicException('find() requires the root DbSet.');
         }
         $key = $this->mapping->normalizeKey($key);
-        $tracked = $this->context->tracked($this->mapping, $key);
+        $tracking = $this->trackingMode();
+        $tracked = $tracking === QueryTrackingBehavior::TrackAll ? $this->context->tracked($this->mapping, $key) : null;
         if ($tracked !== null) {
+            $this->context->loadIncludes($this->mapping, [$tracked], $this->includes, $tracking);
             return $tracked;
         }
-        $query = $this;
+        $query = $this->withTracking($tracking);
         foreach ($key as $name => $value) {
             $query = $query->where(Expr::eq(Expr::field($name), $value));
         }
@@ -117,16 +154,41 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
 
     public function getIterator(): \Traversable
     {
-        foreach ($this->query as $row) {
-            yield $this->context->materialize($this->mapping, $row);
+        $tracking = $this->trackingMode();
+        $this->context->validateIncludes($this->mapping, $this->includes);
+        if ($this->loaded !== null) {
+            $this->context->loadIncludes($this->mapping, $this->loaded, $this->includes, $tracking);
+            yield from $this->loaded;
+        } elseif ($this->includes !== []) {
+            $entities = [];
+            foreach ($this->query as $row) {
+                $entities[] = $this->context->materialize($this->mapping, $row, $tracking);
+            }
+            $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking);
+            yield from $entities;
+        } else {
+            foreach ($this->query as $row) {
+                yield $this->context->materialize($this->mapping, $row, $tracking);
+            }
         }
     }
-
     /** @return list<T> */
     public function toArray(): array { return iterator_to_array($this, false); }
 
+    private function trackingMode(): QueryTrackingBehavior
+    {
+        return $this->trackingBehavior ?? $this->context->changeTracker->queryTrackingBehavior;
+    }
+
+    private function withTracking(QueryTrackingBehavior $tracking): self
+    {
+        // Cached entities cannot be reused when switching query tracking modes.
+        $loaded = $this->trackingMode() === $tracking ? $this->loaded : null;
+        return new self($this->context, $this->mapping, $this->query, $this->root, $this->includes, $loaded, $tracking);
+    }
+
     private function with(Queryable $query): self
     {
-        return new self($this->context, $this->mapping, $query, false);
+        return new self($this->context, $this->mapping, $query, false, $this->includes, trackingBehavior: $this->trackingBehavior);
     }
 }

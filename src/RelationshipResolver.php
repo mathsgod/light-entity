@@ -16,12 +16,12 @@ final class RelationshipResolver
 
     public function configure(string $class, string $name, string $table, array $columns, ?string $targetClass): void
     {
-        $this->overrides[$class][strtolower($name)] = [$table, $columns, $targetClass];
+        $this->overrides[$class][$this->normalize($name)] = [$table, $columns, $targetClass];
     }
 
     public function resolve(EntityMapping $source, string $name): array
     {
-        $override = $this->overrides[$source->class][strtolower($name)] ?? null;
+        $override = $this->overrides[$source->class][$this->normalize($name)] ?? null;
         $candidates = [];
         foreach ($this->tables[$source->table] ??= $this->schema->tables($source->table) as $table) {
             foreach ($this->foreignKeys[$table] ??= $this->schema->foreignKeys($table) as $fk) {
