@@ -7,16 +7,29 @@ namespace PhpEntity;
 /** Runtime metadata. Usually discovered from the database schema. */
 final readonly class EntityMapping
 {
+    public array $keys;
+    public ?string $generatedKeyProperty;
+
     /** @param class-string $class @param non-empty-list<string> $properties */
     public function __construct(
         public string $class,
         public string $table,
         public array $properties,
-        public string $key = 'id',
+        public string|array $key = 'id',
         public bool $generatedKey = true,
         public array $columns = [],
     ) {
-        if ($table === '' || $properties === [] || !in_array($key, $properties, true)
+        $this->keys = is_array($key) ? array_values($key) : [$key];
+        if ($this->keys === [] || count(array_unique($this->keys)) !== count($this->keys)
+            || array_filter($this->keys, fn ($name) => !is_string($name) || !in_array($name, $properties, true))) {
+            throw new \InvalidArgumentException('Mapping requires unique mapped primary-key columns.');
+        }
+        $generated = array_values(array_filter($this->keys, fn ($name) => ($columns[$name] ?? null)?->generated));
+        if (count($generated) > 1 || ($generatedKey && count($this->keys) > 1 && count($generated) !== 1)) {
+            throw new \InvalidArgumentException('Specify exactly one generated primary-key column in column metadata, or disable generatedKey.');
+        }
+        $this->generatedKeyProperty = $generatedKey ? ($generated[0] ?? $this->keys[0]) : null;
+        if ($table === '' || $properties === []
             || count(array_unique($properties)) !== count($properties)) {
             throw new \InvalidArgumentException('Mapping needs a table, unique properties and a mapped key.');
         }
@@ -39,10 +52,39 @@ final readonly class EntityMapping
     public static function fromSchema(string $class, string $table, array $columns): self
     {
         $keys = array_values(array_filter($columns, fn ($c) => $c->primary));
-        if (count($keys) !== 1) {
-            throw new \LogicException("Exactly one primary key is required.");
+        if ($keys === []) {
+            throw new \LogicException("At least one primary key is required.");
         }
-        return new self($class, $table, array_column($columns, "name"), $keys[0]->name, $keys[0]->generated, array_column($columns, null, "name"));
+        return new self($class, $table, array_column($columns, "name"), count($keys) === 1 ? $keys[0]->name : array_column($keys, 'name'), array_filter($keys, fn ($c) => $c->generated) !== [], array_column($columns, null, "name"));
+    }
+
+    /** Extract a complete key in mapping order. */
+    public function keyValues(array $values): array
+    {
+        $key = [];
+        foreach ($this->keys as $name) {
+            $value = $values[$name] ?? null;
+            if ($value === null || !is_scalar($value)) {
+                throw new \LogicException("Missing or invalid primary key: {$name}");
+            }
+            $key[$name] = $value;
+        }
+        return $key;
+    }
+
+    /** find() accepts a scalar for a single key or an associative key array. */
+    public function normalizeKey(int|string|array $key): array
+    {
+        if (!is_array($key)) {
+            if (count($this->keys) !== 1) {
+                throw new \InvalidArgumentException('Composite keys require an associative array.');
+            }
+            $key = [$this->keys[0] => $key];
+        }
+        if (count($key) !== count($this->keys) || array_diff($this->keys, array_keys($key))) {
+            throw new \InvalidArgumentException('Provide exactly the mapped primary-key columns.');
+        }
+        return $this->keyValues($key);
     }
 
     public function values(object $entity): array
@@ -70,7 +112,7 @@ final readonly class EntityMapping
             $initialized = $reflection->hasProperty($name)
                 ? $reflection->getProperty($name)->isInitialized($entity)
                 : ($entity instanceof Entity && $entity->hasValue($name));
-            if (($name === $this->key && $this->generatedKey) || $column?->computed || !$initialized) {
+            if (($name === $this->generatedKeyProperty) || $column?->computed || !$initialized) {
                 unset($values[$name]);
             }
         }

@@ -22,8 +22,8 @@ final readonly class SchemaReader
         if ($columns === []) {
             throw new \InvalidArgumentException("Table not found or inaccessible: {$table}");
         }
-        if (count(array_filter($columns, fn (Column $c) => $c->primary)) !== 1) {
-            throw new \LogicException('Schema mapping requires exactly one primary-key column.');
+        if (count(array_filter($columns, fn (Column $c) => $c->primary)) === 0) {
+            throw new \LogicException('Schema mapping requires at least one primary-key column.');
         }
         return $columns;
     }

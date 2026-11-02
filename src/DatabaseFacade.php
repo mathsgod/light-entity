@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace PhpEntity;
 
 use PDO;
+use PhpEntity\Migrations\MigrationBuilder;
+use PhpEntity\Migrations\MigrationSqlGenerator;
+use PhpEntity\Sql\MySqlDialect;
+use PhpEntity\Sql\SqliteDialect;
 
 /** Database operations sharing the DbContext connection. */
 final class DatabaseFacade
@@ -48,6 +52,38 @@ final class DatabaseFacade
         $this->requireOwnedTransaction();
         $this->pdo->rollBack();
         $this->ownsTransaction = false;
+    }
+
+    /** Returns executable DDL without changing the database. */
+    public function generateMigrationScript(MigrationBuilder $migration): string
+    {
+        $statements = $this->migrationSqlGenerator()->generate($migration);
+        return $statements === [] ? '' : implode(";\n", $statements).";\n";
+    }
+
+    /** Executes queued DDL. Does not maintain migration history or refresh cached mappings. */
+    public function executeMigration(MigrationBuilder $migration): void
+    {
+        $statements = $this->migrationSqlGenerator()->generate($migration);
+        if ($statements === []) {
+            return;
+        }
+        if ($this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' && $this->pdo->inTransaction()) {
+            throw new \LogicException('MySQL DDL implicitly commits; execute migrations outside active transactions.');
+        }
+        foreach ($statements as $sql) {
+            $this->pdo->exec($sql);
+        }
+    }
+
+    private function migrationSqlGenerator(): MigrationSqlGenerator
+    {
+        $dialect = match ($this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) {
+            'mysql' => new MySqlDialect(),
+            'sqlite' => new SqliteDialect(),
+            default => throw new \LogicException('DDL generation currently supports only MySQL and SQLite.'),
+        };
+        return new MigrationSqlGenerator($dialect);
     }
 
     /**

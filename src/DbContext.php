@@ -45,13 +45,16 @@ class DbContext
         if ($this->entries->offsetExists($entity)) {
             throw new \LogicException('Entity is already tracked.');
         }
-        if ($mapping->generatedKey && $values[$mapping->key] !== null) {
-            throw new \LogicException('A generated key must be null when adding an entity.');
+        foreach ($mapping->keys as $key) {
+            if ($key === $mapping->generatedKeyProperty) {
+                if ($values[$key] !== null) {
+                    throw new \LogicException('A generated key must be null when adding an entity.');
+                }
+            } elseif ($values[$key] === null) {
+                throw new \LogicException('A non-generated key is required.');
+            }
         }
-        if (!$mapping->generatedKey && $values[$mapping->key] === null) {
-            throw new \LogicException('A non-generated key is required.');
-        }
-        $this->assertIdentityAvailable($mapping, $values[$mapping->key], $entity);
+        $this->assertIdentityAvailable($mapping, $values, $entity);
         $this->entries[$entity] = [$mapping, 'added', $values];
     }
 
@@ -70,22 +73,27 @@ class DbContext
             }
         } else {
             $original = $values;
-            $this->assertIdentityAvailable($mapping, $values[$mapping->key], $entity);
+            $this->assertIdentityAvailable($mapping, $values, $entity);
         }
-        if ($original[$mapping->key] === null) {
-            throw new \LogicException('Cannot remove an entity without a key.');
-        }
+        $mapping->keyValues($original);
         $this->entries[$entity] = [$mapping, 'deleted', $original];
     }
 
     /** @internal */
-    public function tracked(EntityMapping $mapping, int|string $key): ?object
+    public function tracked(EntityMapping $mapping, int|string|array $key): ?object
     {
+        $key = $mapping->normalizeKey($key);
         foreach ($this->entries as $entity) {
             [$entryMapping, , $original] = $this->entries[$entity];
-            if ($entryMapping === $mapping && (string) $original[$mapping->key] === (string) $key) {
-                return $entity;
+            if ($entryMapping !== $mapping) {
+                continue;
             }
+            foreach ($key as $name => $value) {
+                if ($original[$name] === null || (string) $original[$name] !== (string) $value) {
+                    continue 2;
+                }
+            }
+            return $entity;
         }
         return null;
     }
@@ -93,7 +101,7 @@ class DbContext
     /** @internal */
     public function materialize(EntityMapping $mapping, array $row): object
     {
-        $key = $row[$mapping->key] ?? throw new \LogicException('Query returned no entity key.');
+        $key = $mapping->keyValues($row);
         if (($entity = $this->tracked($mapping, $key)) !== null) {
             return $entity;
         }
@@ -112,9 +120,10 @@ class DbContext
             foreach ($this->entries as $entity) {
                 [$mapping, $state, $original] = $this->entries[$entity];
                 $values = $mapping->values($entity);
-                $key = $mapping->key;
-                if ($values[$key] !== $original[$key]) {
-                    throw new \LogicException('Changing a tracked primary key is not supported.');
+                foreach ($mapping->keys as $key) {
+                    if ($values[$key] !== $original[$key]) {
+                        throw new \LogicException('Changing a tracked primary key is not supported.');
+                    }
                 }
                 $table = $this->quote($mapping->table);
                 if ($state === 'added') {
@@ -133,12 +142,13 @@ class DbContext
                         if ($id === false || $id === '') {
                             throw new \RuntimeException('Driver did not return a generated key.');
                         }
-                        $values[$key] = $id;
+                        $values[$mapping->generatedKeyProperty] = $id;
                     }
-                    $values = $this->reloadValues($mapping, $values[$key]);
+                    $values = $this->reloadValues($mapping, $values);
                     ++$count;
                 } elseif ($state === 'deleted') {
-                    $this->execute("DELETE FROM {$table} WHERE ".$this->quote($key).' = ?', [$original[$key]]);
+                    [$where, $parameters] = $this->keyWhere($mapping, $original);
+                    $this->execute("DELETE FROM {$table} WHERE {$where}", $parameters);
                     ++$count;
                 } else {
                     $changes = [];
@@ -146,14 +156,15 @@ class DbContext
                         if (($mapping->columns[$name] ?? null)?->computed && $value !== $original[$name]) {
                             throw new \LogicException("Computed columns cannot be modified.");
                         }
-                        if ($name !== $key && $value !== $original[$name]) {
+                        if (!in_array($name, $mapping->keys, true) && $value !== $original[$name]) {
                             $changes[$name] = $value;
                         }
                     }
                     if ($changes !== []) {
                         $assignments = implode(', ', array_map(fn ($name) => $this->quote($name).' = ?', array_keys($changes)));
-                        $this->execute("UPDATE {$table} SET {$assignments} WHERE ".$this->quote($key).' = ?', [...array_values($changes), $original[$key]]);
-                        $values = $this->reloadValues($mapping, $original[$key]);
+                        [$where, $parameters] = $this->keyWhere($mapping, $original);
+                        $this->execute("UPDATE {$table} SET {$assignments} WHERE {$where}", [...array_values($changes), ...$parameters]);
+                        $values = $this->reloadValues($mapping, $original);
                         ++$count;
                     }
                 }
@@ -177,11 +188,11 @@ class DbContext
         return $count;
     }
 
-    private function reloadValues(EntityMapping $mapping, mixed $key): array
+    private function reloadValues(EntityMapping $mapping, array $values): array
     {
-        $statement = $this->pdo->prepare('SELECT * FROM '.$this->quote($mapping->table)
-            .' WHERE '.$this->quote($mapping->key).' = ?');
-        $statement->execute([$key]);
+        [$where, $parameters] = $this->keyWhere($mapping, $values);
+        $statement = $this->pdo->prepare('SELECT * FROM '.$this->quote($mapping->table).' WHERE '.$where);
+        $statement->execute($parameters);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
         if ($row === false) {
             throw new \RuntimeException('Written entity could not be reloaded.');
@@ -190,11 +201,22 @@ class DbContext
         return $mapping->values($mapping->hydrate($row));
     }
 
-    private function assertIdentityAvailable(EntityMapping $mapping, mixed $key, object $entity): void
+    private function assertIdentityAvailable(EntityMapping $mapping, array $values, object $entity): void
     {
-        if ($key !== null && ($tracked = $this->tracked($mapping, $key)) !== null && $tracked !== $entity) {
+        foreach ($mapping->keys as $key) {
+            if ($values[$key] === null) {
+                return;
+            }
+        }
+        if (($tracked = $this->tracked($mapping, $mapping->keyValues($values))) !== null && $tracked !== $entity) {
             throw new \LogicException('Another entity with this key is already tracked.');
         }
+    }
+
+    private function keyWhere(EntityMapping $mapping, array $values): array
+    {
+        $keys = $mapping->keyValues($values);
+        return [implode(' AND ', array_map(fn ($key) => $this->quote($key).' = ?', array_keys($keys))), array_values($keys)];
     }
 
     private function quote(string $name): string { return $this->dialect->quoteIdentifier($name); }

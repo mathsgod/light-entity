@@ -31,7 +31,7 @@ $users->remove($new);
 $db->saveChanges();
 ```
 
-The database table must already exist; this package does not create schema. Dialects are selected automatically for PDO MySQL/MariaDB and SQLite.
+Entity queries require existing tables. The optional MigrationBuilder can create tables before querying them (see below). Dialects are selected automatically for PDO MySQL/MariaDB and SQLite.
 
 ## Table names and typed properties
 
@@ -83,7 +83,7 @@ Keep this repository alongside `php-linq` and run `composer install`. The path r
 
 Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite currently runs against SQLite.
 
-No relationship loading, migrations, custom entity column aliases, composite entity primary keys, optimistic concurrency, async operations or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
+No relationship loading, migration version/history management, custom entity column aliases, composite entity primary keys, optimistic concurrency, async operations or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
 
 ## Adding multiple entities
 
@@ -329,3 +329,62 @@ This suite verifies MySQL 8 specifically, including INNER/LEFT joins, duplicate
 and null keys, composite join keys, self/chained joins, filtered and paged
 sources, projections, aggregates, schema discovery and DbSet tracking. It does
 not run the entire SQLite persistence suite against MySQL.
+
+## Create tables with MigrationBuilder
+
+The builder collects immutable schema operations; constructing it does not
+access the database. The following callback API is supported for MySQL and
+SQLite:
+
+```php
+use PhpEntity\Migrations\MigrationBuilder;
+use PhpEntity\Migrations\TableBuilder;
+
+$migration = new MigrationBuilder();
+$migration->createTable('users', function (TableBuilder $table) {
+    $table->integer('id')->autoIncrement()->primaryKey();
+    $table->string('name', 100);
+    $table->string('email', 255)->nullable();
+});
+
+// Preview only: returns a SQL script without modifying the database.
+$script = $db->database->generateMigrationScript($migration);
+
+// Execute explicitly using the context's PDO connection.
+$db->database->executeMigration($migration);
+
+// The created schema can immediately be used by the normal ORM.
+$users = $db->set(User::class, 'users');
+```
+
+`integer()` and `string($name, $length = 255)` create non-nullable columns by
+default. Column options are `nullable()`, `autoIncrement()` and `primaryKey()`;
+each accepts an optional boolean. Auto-increment requires the single integer
+primary key. A plain integer primary key remains manually assigned, including
+on SQLite. Tables without a primary key can be created, but entity mapping
+still requires exactly one primary key.
+
+Multiple `createTable()` calls queue multiple statements in order. Empty
+tables, duplicate column names, invalid string lengths, nullable primary keys
+and multiple primary keys are rejected before the operation is queued. Table
+names may use `schema.table`; column names are quoted as literal identifiers.
+The database still enforces its own identifier, row-size and type limits.
+SQLite accepts VARCHAR lengths as metadata but does not enforce those lengths.
+
+For offline SQL generation, use
+`new MigrationSqlGenerator(new MySqlDialect())` from `PhpEntity\Migrations`
+and `PhpEntity\Sql`, then call `generate($migration)` to obtain a list of SQL
+statements. PostgreSQL and SQL Server DDL generation are not implemented yet.
+
+This first version supports CREATE TABLE only. It does not implement ALTER or
+DROP, model snapshots, automatic schema comparison, migration history, or
+Up/Down execution. Re-executing the same CREATE fails rather than silently
+skipping it. Operations do not automatically start a transaction; a later
+failure may leave earlier tables created. MySQL execution rejects active
+transactions because DDL would implicitly commit them. Schema changes do not
+refresh existing cached mappings; use a new context when changing mapped
+schemas.
+
+`composer test:mysql` also runs the migration contract against Docker MySQL 8,
+including preview, schema discovery, generated/manual keys, ORM persistence,
+identifier escaping and the transaction guard.

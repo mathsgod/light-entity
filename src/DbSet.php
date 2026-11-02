@@ -78,16 +78,21 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     }
 
     /** @return T|null */
-    public function find(int|string $key): ?object
+    public function find(int|string|array $key): ?object
     {
         if (!$this->root) {
             throw new \LogicException('find() requires the root DbSet.');
         }
+        $key = $this->mapping->normalizeKey($key);
         $tracked = $this->context->tracked($this->mapping, $key);
         if ($tracked !== null) {
             return $tracked;
         }
-        $rows = $this->where(Expr::eq(Expr::field($this->mapping->key), $key))->take(1)->toArray();
+        $query = $this;
+        foreach ($key as $name => $value) {
+            $query = $query->where(Expr::eq(Expr::field($name), $value));
+        }
+        $rows = $query->take(1)->toArray();
         return $rows[0] ?? null;
     }
 

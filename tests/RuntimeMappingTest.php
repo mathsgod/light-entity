@@ -100,12 +100,13 @@ final class RuntimeMappingTest extends TestCase
         self::assertSame(4, $found->quantity);
     }
 
-    public function testCompositeKeyIsRejected(): void
+    public function testCompositeKeyIsDiscovered(): void
     {
         $this->pdo->exec('CREATE TABLE composite (a INTEGER, b INTEGER, PRIMARY KEY(a,b))');
-        $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('exactly one primary-key column');
         $this->db->set(OtherWidget::class, 'composite');
+        $mapping = $this->db->model->getEntityType(OtherWidget::class);
+        self::assertSame(['a', 'b'], $mapping->keys);
+        self::assertFalse($mapping->generatedKey);
     }
 
     public function testSchemaCacheIsScopedToContext(): void
