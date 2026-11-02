@@ -77,6 +77,34 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->query->select($selector);
     }
 
+    /** Return untracked rows from the set operation. */
+    public function concat(self $second): Queryable
+    {
+        return $this->query->select(Expr::fields(...$this->mapping->properties))
+            ->concat($second->query->select(Expr::fields(...$second->mapping->properties)));
+    }
+
+    /** Return untracked rows from the set operation. */
+    public function union(self $second): Queryable
+    {
+        return $this->query->select(Expr::fields(...$this->mapping->properties))
+            ->union($second->query->select(Expr::fields(...$second->mapping->properties)));
+    }
+
+    /** Return untracked rows from the set operation. */
+    public function intersect(self $second): Queryable
+    {
+        return $this->query->select(Expr::fields(...$this->mapping->properties))
+            ->intersect($second->query->select(Expr::fields(...$second->mapping->properties)));
+    }
+
+    /** Return untracked rows from the set operation. */
+    public function except(self $second): Queryable
+    {
+        return $this->query->select(Expr::fields(...$this->mapping->properties))
+            ->except($second->query->select(Expr::fields(...$second->mapping->properties)));
+    }
+
     /** Flatten another set into untracked projected rows or scalar values. */
     public function selectMany(
         self $inner,

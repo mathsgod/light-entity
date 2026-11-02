@@ -115,6 +115,9 @@ abstract class AbstractSqlDialect implements SqlDialect
             : '('.$this->derivedSequence($query->sourcePlan).') AS '.$this->quoteIdentifier(
                 $query->innerPlan === null ? '__linq_result' : 'outer',
             );
+        if ($query->setLeft !== null) {
+            $from = '('.$this->compileSet($query).') AS '.$this->quoteIdentifier('__linq_set');
+        }
         $sql = 'SELECT '.($query->distinct ? 'DISTINCT ' : '').$pagination['prefix'].$selection.' FROM '.$from;
         if ($query->innerPlan !== null) {
             $sql .= ' '.$query->joinType.' JOIN ('.$this->derivedSequence($query->innerPlan)
@@ -149,6 +152,36 @@ abstract class AbstractSqlDialect implements SqlDialect
         }
 
         return $sql.$pagination['suffix'];
+    }
+
+    private function compileSet(QueryPlan $query): string
+    {
+        $left = $this->derivedSequence($query->setLeft);
+        $right = $this->derivedSequence($query->setRight);
+        $leftAlias = $this->quoteIdentifier('__linq_left');
+        $rightAlias = $this->quoteIdentifier('__linq_right');
+        // EXISTS also supports MySQL installations without native INTERSECT/EXCEPT.
+        if ($this instanceof MySqlDialect && in_array($query->setOperator, ['intersect', 'except'], true)) {
+            $conditions = $columns = [];
+            foreach ($query->setColumns as $name) {
+                $column = $this->quoteIdentifier($name);
+                $a = $leftAlias.'.'.$column;
+                $b = $rightAlias.'.'.$column;
+                $columns[] = $a.' AS '.$column;
+                $conditions[] = '('.$a.' = '.$b.' OR ('.$a.' IS NULL AND '.$b.' IS NULL))';
+            }
+            $exists = $query->setOperator === 'except' ? 'NOT EXISTS' : 'EXISTS';
+            return 'SELECT DISTINCT '.implode(', ', $columns).' FROM ('.$left.') AS '.$leftAlias
+                .' WHERE '.$exists.' (SELECT 1 FROM ('.$right.') AS '.$rightAlias
+                .' WHERE '.implode(' AND ', $conditions).')';
+        }
+        $operator = match ($query->setOperator) {
+            'concat' => 'UNION ALL', 'union' => 'UNION',
+            'intersect' => 'INTERSECT', 'except' => 'EXCEPT',
+            default => throw new \LogicException('Unsupported set operator.'),
+        };
+        return 'SELECT * FROM ('.$left.') AS '.$leftAlias.' '.$operator
+            .' SELECT * FROM ('.$right.') AS '.$rightAlias;
     }
 
     private function derivedSequence(QueryPlan $query): string

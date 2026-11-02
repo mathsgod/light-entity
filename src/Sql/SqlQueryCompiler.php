@@ -56,7 +56,17 @@ final readonly class SqlQueryCompiler
                 throw new \LogicException('thenBy() requires a preceding orderBy().');
             }
             $previousMethod = $operation->method;
+            if (in_array($operation->method, ['concat', 'union', 'intersect', 'except'], true)) {
+                $plan = $this->setPlan($plan, $this->plan($operation->arguments['second']), $operation->method);
+                $paginationStarted = $joinedProjection = false;
+                continue;
+            }
 
+
+            if ($plan->setLeft !== null && !$plan->selection instanceof ProjectionExpression
+                && in_array($operation->method, ['where', 'select', 'orderBy'], true)) {
+                throw new \LogicException('Use named projections for field-based operators after a scalar set operation.');
+            }
             // A projection after grouping changes the element type to an ordinary row.
             // DISTINCT before a new projection, and pagination before DISTINCT/GROUP BY,
             // must also remain inside a derived table.
@@ -167,6 +177,36 @@ final readonly class SqlQueryCompiler
         return $plan;
     }
 
+    private function setPlan(QueryPlan $left, QueryPlan $right, string $method): QueryPlan
+    {
+        $leftColumns = $this->setColumns($left->selection);
+        $rightColumns = $this->setColumns($right->selection);
+        $leftScalar = !$left->selection instanceof ProjectionExpression;
+        $rightScalar = !$right->selection instanceof ProjectionExpression;
+        if ($leftColumns !== $rightColumns || $leftScalar !== $rightScalar) {
+            throw new \LogicException('Set sources require matching projection names, order and scalar/row shape.');
+        }
+        $plan = new QueryPlan('__linq_set');
+        $plan->setLeft = $left;
+        $plan->setRight = $right;
+        $plan->setOperator = $method;
+        $plan->setColumns = $leftColumns;
+        $plan->selection = $leftScalar ? new FieldExpression('__linq_value')
+            : new ProjectionExpression(array_combine($leftColumns,
+                array_map(static fn ($name) => new FieldExpression($name), $leftColumns)));
+        return $plan;
+    }
+
+    /** @return non-empty-list<string> */
+    private function setColumns(?ValueExpression $selection): array
+    {
+        if ($selection instanceof ProjectionExpression) return array_keys($selection->members);
+        if ($selection instanceof FieldExpression || $selection instanceof FunctionExpression || $selection instanceof AggregateExpression) {
+            return ['__linq_value'];
+        }
+        throw new \LogicException('SQL set operations require explicit scalar or named projections on both sources.');
+    }
+
     private function terminalPlan(MethodCallExpression $expression): QueryPlan
     {
         $plan = $this->plan($expression->source);
@@ -268,6 +308,8 @@ final readonly class SqlQueryCompiler
             $plan->joinCondition === null ? [] : [$plan->joinCondition]) as $value) {
             $this->validateValue($value, $plan->groupKey !== null);
         }
+        if ($plan->setLeft !== null) $this->validatePlan($plan->setLeft);
+        if ($plan->setRight !== null) $this->validatePlan($plan->setRight);
         if ($plan->sourcePlan !== null) $this->validatePlan($plan->sourcePlan);
         if ($plan->innerPlan !== null) $this->validatePlan($plan->innerPlan);
     }

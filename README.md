@@ -796,3 +796,41 @@ projection, as with the other single-element terminal methods.
 `singleOrDefault()` reads at most two rows. All three methods are also available
 on DbSet, preserving entity materialization, tracking and includes. DbSet default
 values must be objects or null.
+
+### Queryable set operations
+
+```php
+$first = $firstQuery->select(Expr::fields('CustomerId'));
+$second = $secondQuery->select(Expr::fields('CustomerId'));
+
+$allRows = $first->concat($second);       // keep duplicates
+$combined = $first->union($second);      // distinct values from either query
+$shared = $first->intersect($second);    // distinct values present in both
+$onlyFirst = $first->except($second);    // distinct values absent from second
+
+$ids = $combined->orderBy(Expr::field('CustomerId'))->toArray();
+```
+
+Both sources must share a provider. Set operations compare complete selected
+values or rows, not just primary keys. In-memory queries use the existing
+Enumerable equality rules and first-occurrence order. `concat()` preserves
+all duplicates; the other three operations remove duplicates. Source operators
+remain before the set operation, and subsequent operators apply to its result.
+
+The SQL provider requires explicit compatible projections: either two scalars,
+or named projections with identical member names and order. Column value types
+must be compatible in the database. SQL uses database equality and collation;
+null values compare as equal for set membership. For filtering, ordering or
+other field-based composition after a set operation, use named projections on
+both inputs. Scalar sets support operations such as `count()` and `contains()`.
+
+`concat()` translates to `UNION ALL`, and `union()` to `UNION`. SQLite,
+PostgreSQL and SQL Server use native `INTERSECT` and `EXCEPT`. MySQL uses
+`SELECT DISTINCT` with null-aware `EXISTS` / `NOT EXISTS` comparisons for these
+two operations. Each input is wrapped to retain its own pagination; fluent set
+chains are nested to preserve their grouping. Input ordering without pagination
+is discarded. Add `orderBy()` after the set operation for a defined output order.
+
+DbSet also exposes these four methods. It projects mapped columns automatically
+and returns untracked Queryable rows; both mappings must have matching column
+names and order. Includes and entity tracking are not applied to these results.

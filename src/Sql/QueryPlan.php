@@ -18,6 +18,11 @@ final class QueryPlan
     /** @var list<ValueExpression> */
     public array $havingPredicates = [];
     public bool $distinct = false;
+    public ?self $setLeft = null;
+    public ?self $setRight = null;
+    public ?string $setOperator = null;
+    /** @var list<string> */
+    public array $setColumns = [];
     public ?self $sourcePlan = null;
     public ?RawSqlSourceExpression $rawSource = null;
     public ?self $innerPlan = null;
