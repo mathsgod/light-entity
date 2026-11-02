@@ -1,0 +1,16 @@
+{
+  "name": "php-entity/select-benchmark",
+  "private": true,
+  "require": {
+    "php": ">=8.2",
+    "laminas/laminas-db": "^2.20",
+    "mathsgod/php-entity": "@dev",
+    "mathsgod/php-linq": "@dev",
+    "mathsgod/light-db": "@dev"
+  },
+  "repositories": [
+    {"type": "path", "url": "../.."},
+    {"type": "path", "url": "../../../php-linq"},
+    {"type": "path", "url": "../../../../light/light-db"}
+  ]
+}

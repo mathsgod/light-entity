@@ -7,6 +7,12 @@ namespace PhpEntity;
 /** Runtime metadata. Usually discovered from the database schema. */
 final readonly class EntityMapping
 {
+    private \ReflectionClass $reflection;
+    /** @internal Only schema-driven entities with no constructor or custom setters use FETCH_CLASS. */
+    public bool $pdoFetchClassCompatible;
+    /** @var list<string> @internal */
+    public array $booleanProperties;
+
     /** @var non-empty-list<string> */
     public array $keys;
     public ?string $generatedKeyProperty;
@@ -39,7 +45,15 @@ final readonly class EntityMapping
             || count(array_unique($properties)) !== count($properties)) {
             throw new \InvalidArgumentException('Mapping needs a table, unique properties and a mapped key.');
         }
-        $reflection = new \ReflectionClass($class);
+        $reflection = $this->reflection = new \ReflectionClass($class);
+        $this->pdoFetchClassCompatible = $reflection->isSubclassOf(Entity::class)
+            && $reflection->getConstructor() === null
+            && $reflection->getMethod('__set')->getDeclaringClass()->getName() === Entity::class
+            && array_filter($properties, fn ($name) => $reflection->hasProperty($name)) === []
+            && array_filter($properties, fn ($name) => !isset($columns[$name])
+                || preg_match('/^(bit|year)\b/i', $columns[$name]->type)) === [];
+        $this->booleanProperties = array_values(array_filter($properties, fn ($name) => isset($columns[$name])
+            && ($columns[$name]->boolean || preg_match('/\b(bool|boolean)\b/i', $columns[$name]->type))));
         if (!$reflection->isInstantiable()) {
             throw new \InvalidArgumentException('Entity must be instantiable.');
         }
@@ -143,7 +157,7 @@ final readonly class EntityMapping
     public function hydrate(array $row): object
     {
         $this->validateRow($row);
-        $entity = (new \ReflectionClass($this->class))->newInstanceWithoutConstructor();
+        $entity = $this->reflection->newInstanceWithoutConstructor();
         foreach ($this->properties as $property) {
             $entity->$property = isset($this->columns[$property])
                 ? $this->columns[$property]->convert($row[$property]) : $row[$property];

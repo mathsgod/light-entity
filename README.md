@@ -61,13 +61,20 @@ Unknown dynamic properties are not persisted. Only discovered columns participat
 ## Types and defaults
 
 - Integer columns become PHP integers when within PHP's integer range; larger values remain strings.
-- Boolean declarations become booleans; MySQL `tinyint(1)` remains an integer because it can store other values.
+- Boolean declarations become booleans. MySQL schema discovery treats columns reported as `tinyint(1)` as boolean: zero becomes false, nonzero becomes true, and NULL stays null. This is a mapping convention; use another integer width for numeric fields that must retain values such as 2 or 3. MySQL 8 may remove the display width from unsigned TINYINT metadata; those columns remain integers.
 - Floating-point columns become floats. Decimal/numeric, dates, JSON and binary values remain strings; JSON is not decoded automatically. SQLite's own numeric storage may already lose decimal precision.
 - Nullable database values remain null. Database constraints enforce nullability and required columns.
 - Unset dynamic or uninitialized declared properties are omitted from inserts, allowing database defaults. Explicit null is sent as null; it does not request the default.
 - Generated keys and computed columns are omitted from inserts. Attempts to modify computed columns are rejected. Values are reloaded after inserts/updates to include defaults and generated values.
 
 ## Context behavior
+
+`Entity` implements `JsonSerializable`, so `json_encode($entities, JSON_THROW_ON_ERROR)`
+exports the internal field values together with initialized public properties.
+Public properties override same-named internal values. Uninitialized typed
+properties, static properties, protected/private members, and relation context
+are excluded. Custom initialized public properties are included even when they
+are not mapped database columns. JSON database columns remain strings as above.
 
 `DbSet` supports `include`, `where`, `orderBy`, `orderByDescending`, `skip`, `take`, `first`, `find`, `any`, `count`, `toArray`, and iteration. `first()` throws `UnderflowException` when empty. Root `find()` checks the identity map before querying and returns null when missing.
 
@@ -551,6 +558,13 @@ are immutable and the last override wins. Includes and relationship getters inhe
 the source query's mode. NoTracking edits are not automatically saved, while
 explicit `add()`, `remove()`, or entry state assignments still opt into writes.
 Changing the default does not detach previously tracked entities.
+On MySQL with native prepares and native PDO value types, untracked table queries
+can use `PDO::FETCH_CLASS` to avoid an intermediate row array and per-column
+conversion. This applies to schema-driven `Entity` subclasses with no constructor,
+declared mapped properties, or custom setter. Only schema-marked boolean columns
+are converted after fetching. Raw SQL, tracking, other drivers, and incompatible
+entities retain the existing hydration path. BIT/YEAR mappings also retain the
+existing string conversions. Constructors are still skipped.
 See [Query Tracking](docs/query-tracking.md) for cache behavior, explicit attachment,
 identity semantics, and performance considerations.
 

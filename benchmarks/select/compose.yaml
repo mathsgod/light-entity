@@ -1,0 +1,17 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: select_bench
+      MYSQL_ROOT_HOST: '%'
+      MYSQL_DATABASE: php_entity_select_bench
+    ports:
+      - '127.0.0.1:33388:3306'
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 2s
+      timeout: 3s
+      retries: 45
+      start_period: 10s

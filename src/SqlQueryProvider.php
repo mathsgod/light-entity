@@ -28,6 +28,72 @@ final readonly class SqlQueryProvider implements IQueryProvider
     public function execute(Expression $expression): mixed
     {
         $query = $this->compile($expression);
+        $statement = $this->executeStatement($query);
+
+        return match ($query->resultMode) {
+            'count' => (int) $statement->fetchColumn(),
+            'any' => (int) $statement->fetchColumn() > 0,
+            'first-row' => $this->first($statement->fetch(PDO::FETCH_ASSOC)),
+            'first-scalar' => $this->first($statement->fetchColumn()),
+            'scalar-list' => $statement->fetchAll(PDO::FETCH_COLUMN),
+            default => $statement->fetchAll(PDO::FETCH_ASSOC),
+        };
+    }
+
+    /** @return list<object>|null null selects the existing hydration path. @internal */
+    public function executeNoTrackingEntities(Expression $expression, EntityMapping $mapping): ?array
+    {
+        if (!$mapping->pdoFetchClassCompatible
+            || $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql'
+            || $this->pdo->getAttribute(PDO::ATTR_STRINGIFY_FETCHES)
+            || $this->pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES)) {
+            return null;
+        }
+        $source = $expression;
+        while ($source instanceof \PhpLinq\Expression\MethodCallExpression) {
+            if (!in_array($source->method, ['where', 'orderBy', 'orderByDescending', 'skip', 'take'], true)) {
+                return null;
+            }
+            $source = $source->source;
+        }
+        if (!$source instanceof \PhpLinq\Expression\SourceExpression || $source->name !== $mapping->table) {
+            return null; // Raw SQL may change value types; retain schema conversions.
+        }
+        $query = $this->compile($expression);
+        if ($query->resultMode !== 'rows') {
+            return null;
+        }
+        $statement = $this->executeStatement($query);
+        $names = [];
+        for ($i = 0; $i < $statement->columnCount(); $i++) {
+            $names[] = $statement->getColumnMeta($i)['name'] ?? null;
+        }
+        // Explicit mappings may omit table columns. Preserve validation and ignore extras.
+        if (count($names) !== count($mapping->properties) || array_diff($mapping->properties, $names)) {
+            $entities = [];
+            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $entities[] = $mapping->hydrate($row);
+            }
+            return $entities;
+        }
+        try {
+            $entities = $statement->fetchAll(PDO::FETCH_CLASS, $mapping->class);
+            if ($mapping->booleanProperties !== []) {
+                foreach ($entities as $entity) {
+                    foreach ($mapping->booleanProperties as $name) {
+                        $value = $entity->$name;
+                        $entity->$name = $value === null ? null : (bool) $value;
+                    }
+                }
+            }
+            return $entities;
+        } finally {
+            $statement->closeCursor();
+        }
+    }
+
+    private function executeStatement(CompiledQuery $query): \PDOStatement
+    {
         $statement = $this->pdo->prepare($query->sql);
         foreach ($query->parameters as $name => $value) {
             $type = match (true) {
@@ -41,14 +107,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
         }
         $statement->execute();
 
-        return match ($query->resultMode) {
-            'count' => (int) $statement->fetchColumn(),
-            'any' => (int) $statement->fetchColumn() > 0,
-            'first-row' => $this->first($statement->fetch(PDO::FETCH_ASSOC)),
-            'first-scalar' => $this->first($statement->fetchColumn()),
-            'scalar-list' => $statement->fetchAll(PDO::FETCH_COLUMN),
-            default => $statement->fetchAll(PDO::FETCH_ASSOC),
-        };
+        return $statement;
     }
 
     private function first(mixed $value): mixed

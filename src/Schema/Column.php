@@ -6,6 +6,8 @@ namespace PhpEntity\Schema;
 
 final readonly class Column
 {
+    private string $normalizedType;
+
     public function __construct(
         public string $name,
         public string $type,
@@ -14,16 +16,19 @@ final readonly class Column
         public bool $generated = false,
         public bool $computed = false,
         public mixed $default = null,
-    ) {}
+        public bool $boolean = false,
+    ) {
+        $this->normalizedType = strtolower($type);
+    }
 
     public function convert(mixed $value): mixed
     {
         if ($value === null) {
             return null;
         }
-        $type = strtolower($this->type);
+        $type = $this->normalizedType;
         // Exact decimals and large integers must not silently lose precision.
-        if (preg_match('/\b(bool|boolean)\b/', $type)) {
+        if ($this->boolean || preg_match('/\b(bool|boolean)\b/', $type)) {
             return (bool) $value;
         }
         if (str_contains($type, 'int')) {

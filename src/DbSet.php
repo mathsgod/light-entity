@@ -170,6 +170,10 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         if ($this->loaded !== null) {
             $this->context->loadIncludes($this->mapping, $this->loaded, $this->includes, $tracking);
             yield from $this->loaded;
+        } elseif ($tracking === QueryTrackingBehavior::NoTracking
+            && ($entities = $this->context->fetchNoTrackingEntities($this->mapping, $this->query)) !== null) {
+            $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking);
+            yield from $entities;
         } elseif ($this->includes !== []) {
             $entities = [];
             foreach ($this->query as $row) {

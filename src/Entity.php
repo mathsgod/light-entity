@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PhpEntity;
 
 /** Optional base for schema-driven entities without manually declared properties. */
-abstract class Entity
+abstract class Entity implements \JsonSerializable
 {
     private array $data = [];
     private ?DbContext $relationContext = null;
@@ -36,4 +36,17 @@ abstract class Entity
     public function __set(string $name, mixed $value): void { $this->data[$name] = $value; }
     public function __isset(string $name): bool { return isset($this->data[$name]); }
     public function hasValue(string $name): bool { return array_key_exists($name, $this->data); }
+
+    public function jsonSerialize(): array
+    {
+        $values = $this->data;
+        // Initialized public properties have unmangled names; private/protected
+        // storage (including relation context) contains NUL bytes in its keys.
+        foreach (get_mangled_object_vars($this) as $name => $value) {
+            if (!str_contains($name, "\0")) {
+                $values[$name] = $value;
+            }
+        }
+        return $values;
+    }
 }

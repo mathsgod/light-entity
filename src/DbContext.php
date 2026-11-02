@@ -166,6 +166,23 @@ class DbContext
         return $entity;
     }
 
+    /** @return list<object>|null @internal */
+    public function fetchNoTrackingEntities(EntityMapping $mapping, Queryable $query): ?array
+    {
+        if ($query->provider() !== $this->provider) {
+            return null;
+        }
+        $entities = $this->provider->executeNoTrackingEntities($query->expression(), $mapping);
+        if ($entities === null) {
+            return null;
+        }
+        foreach ($entities as $entity) {
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking); }
+            if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
+        }
+        return $entities;
+    }
+
     /** Returns entity write operations saved; an outer transaction commits separately. */
     public function saveChanges(): int
     {
