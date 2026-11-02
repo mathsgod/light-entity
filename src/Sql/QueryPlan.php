@@ -28,6 +28,8 @@ final class QueryPlan
     public ?int $offset = null;
     public ?int $limit = null;
     public string $terminal = 'sequence';
+    public ?ValueExpression $terminalPredicate = null;
+    public mixed $defaultValue = null;
 
     public function __construct(public readonly string $table)
     {

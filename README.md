@@ -651,3 +651,38 @@ objects and nested aggregates are rejected explicitly. Composing field-based
 operators after a scalar projection requires a named projection instead.
 `DbSet::groupBy()` and `DbSet::distinct()` return raw `Queryable` results;
 these results do not enter entity tracking.
+
+### Secondary ordering and terminal query operators
+
+`Queryable` supports secondary ordering and these terminal operations:
+
+```php
+$sorted = $query->orderBy(Expr::field('Country'))
+    ->thenBy(Expr::field('Name'))
+    ->thenByDescending(Expr::field('Id'));
+
+$first = $sorted->firstOrDefault(default: null);
+$unique = $query->single(Expr::eq(Expr::field('Id'), 10));
+$allPaid = $query->all(Expr::eq(Expr::field('IsPaid'), true));
+$hasHK = $query->select(Expr::field('Country'))->contains('HK');
+```
+
+`thenBy()` and `thenByDescending()` must follow `orderBy()` or another secondary
+ordering. A new `orderBy()` starts a new primary ordering. In-memory sorting is
+stable for equal keys. `firstOrDefault($predicate, $default)` returns the default
+only for an empty result; null and false are valid results. `single($predicate)`
+throws `UnderflowException` for zero matches and `UnexpectedValueException` for
+multiple matches. `all($predicate)` is true for an empty sequence. Terminal
+operations apply to the sequence produced by earlier operators, including paging.
+
+The SQL provider reads at most one row for `firstOrDefault()` and two for
+`single()`. `all()` uses `NOT EXISTS` with a `CASE` expression so a false or
+SQL UNKNOWN predicate fails the test. SQL `contains()` requires a scalar
+projection and a scalar or null argument; null is compared with `IS NULL`.
+Database equality and collation rules apply.
+
+`DbSet` provides `thenBy()`, `thenByDescending()`, `firstOrDefault()`, `single()`
+and `all()`. Entity results retain tracking and include loading. A DbSet default
+must be an object or null. Use `select(...)->contains(...)` for membership checks.
+Field-based terminal predicates after a projection require a named projection;
+include ordering keys in that projection when preserving order is necessary.

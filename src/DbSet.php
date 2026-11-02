@@ -108,6 +108,29 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->with($this->query->orderByDescending($selector));
     }
 
+    public function thenBy(ValueExpression $selector): self
+    {
+        return $this->with($this->query->thenBy($selector));
+    }
+    public function thenByDescending(ValueExpression $selector): self
+    {
+        return $this->with($this->query->thenByDescending($selector));
+    }
+    /** @return T|null */
+    public function firstOrDefault(?ValueExpression $predicate = null, ?object $default = null): ?object
+    {
+        return $this->entityTerminal('firstOrDefault', $predicate, $default);
+    }
+    /** @return T */
+    public function single(?ValueExpression $predicate = null): object
+    {
+        return $this->entityTerminal('single', $predicate);
+    }
+    public function all(ValueExpression $predicate): bool
+    {
+        return $this->loaded === null ? $this->query->all($predicate)
+            : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded')->all($predicate);
+    }
     public function skip(int $count): self { return $this->with($this->query->skip($count)); }
     public function take(int $count): self { return $this->with($this->query->take($count)); }
     public function count(): int { return $this->loaded === null ? $this->query->count() : count($this->loaded); }
@@ -197,6 +220,19 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     }
     /** @return list<T> */
     public function toArray(): array { return iterator_to_array($this, false); }
+
+    private function entityTerminal(string $method, ?ValueExpression $predicate, ?object $default = null): ?object
+    {
+        $tracking = $this->trackingMode();
+        $this->context->validateIncludes($this->mapping, $this->includes);
+        $query = $this->loaded === null ? $this->query
+            : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded');
+        $result = $query->$method($predicate);
+        if ($result === null) return $default;
+        $entity = $this->loaded === null ? $this->context->materialize($this->mapping, $result, $tracking) : $result;
+        $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking);
+        return $entity;
+    }
 
     private function trackingMode(): QueryTrackingBehavior
     {

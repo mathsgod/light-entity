@@ -27,15 +27,18 @@ abstract class AbstractSqlDialect implements SqlDialect
         $resultMode = match ($terminal) {
             'count' => 'count',
             'any' => 'any',
+            'all', 'contains' => 'boolean',
+            'firstOrDefault', 'single' => $terminal.'-'.($query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar' : 'row'),
             'first' => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'first-scalar' : 'first-row',
             default => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar-list' : 'rows',
         };
 
-        if ($terminal === 'first') {
+        if (in_array($terminal, ['first', 'firstOrDefault', 'single'], true)) {
             $query = clone $query;
-            $query->limit = min($query->limit ?? 1, 1);
+            $max = $terminal === 'single' ? 2 : 1;
+            $query->limit = min($query->limit ?? $max, $max);
             $query->terminal = 'sequence';
-        } elseif (($terminal === 'count' || $terminal === 'any')
+        } elseif (in_array($terminal, ['count', 'any', 'all', 'contains'], true)
             && $query->limit === null
             && $query->offset === null
         ) {
@@ -52,7 +55,16 @@ abstract class AbstractSqlDialect implements SqlDialect
             $sql = "SELECT COUNT(*) AS {$aggregate} FROM ({$sql}) AS {$alias}";
         }
 
-        return new CompiledQuery($sql, $this->parameters, $resultMode);
+        if ($terminal === 'all' || $terminal === 'contains') {
+            $predicate = $this->value($query->terminalPredicate);
+            $condition = $terminal === 'all'
+                ? '(CASE WHEN '.$predicate.' THEN 0 ELSE 1 END = 1)' : $predicate;
+            $exists = $terminal === 'all' ? 'NOT EXISTS' : 'EXISTS';
+            $sql = 'SELECT CASE WHEN '.$exists.' (SELECT 1 FROM ('.$sql.') AS '
+                .$this->quoteIdentifier('__linq_source').' WHERE '.$condition.') THEN 1 ELSE 0 END AS '
+                .$this->quoteIdentifier('__linq_boolean');
+        }
+        return new CompiledQuery($sql, $this->parameters, $resultMode, $query->defaultValue);
     }
 
     final public function quoteIdentifier(string $identifier): string

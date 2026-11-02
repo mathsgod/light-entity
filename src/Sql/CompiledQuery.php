@@ -11,6 +11,7 @@ final readonly class CompiledQuery
         public string $sql,
         public array $parameters,
         public string $resultMode = 'rows',
+        public mixed $defaultValue = null,
     ) {
     }
 }

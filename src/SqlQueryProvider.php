@@ -32,6 +32,8 @@ final readonly class SqlQueryProvider implements IQueryProvider
 
         return match ($query->resultMode) {
             'count' => (int) $statement->fetchColumn(),
+            'boolean' => (bool) $statement->fetchColumn(),
+            'firstOrDefault-row', 'firstOrDefault-scalar', 'single-row', 'single-scalar' => $this->terminalResult($statement, $query),
             'any' => (int) $statement->fetchColumn() > 0,
             'first-row' => $this->first($statement->fetch(PDO::FETCH_ASSOC)),
             'first-scalar' => $this->first($statement->fetchColumn()),
@@ -51,7 +53,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
         }
         $source = $expression;
         while ($source instanceof \Light\Linq\Expression\MethodCallExpression) {
-            if (!in_array($source->method, ['where', 'orderBy', 'orderByDescending', 'skip', 'take'], true)) {
+            if (!in_array($source->method, ['where', 'orderBy', 'thenBy', 'skip', 'take'], true)) {
                 return null;
             }
             $source = $source->source;
@@ -116,6 +118,22 @@ final readonly class SqlQueryProvider implements IQueryProvider
         return $statement;
     }
 
+    private function terminalResult(\PDOStatement $statement, CompiledQuery $query): mixed
+    {
+        try {
+            $row = $statement->fetch(PDO::FETCH_ASSOC);
+            if ($row === false) {
+                if (str_starts_with($query->resultMode, 'firstOrDefault')) return $query->defaultValue;
+                throw new \UnderflowException('The sequence contains no matching element.');
+            }
+            if (str_starts_with($query->resultMode, 'single') && $statement->fetch(PDO::FETCH_ASSOC) !== false) {
+                throw new \UnexpectedValueException('The sequence contains more than one matching element.');
+            }
+            return str_ends_with($query->resultMode, '-scalar') ? $row['__linq_value'] : $row;
+        } finally {
+            $statement->closeCursor();
+        }
+    }
     private function first(mixed $value): mixed
     {
         if ($value === false) {

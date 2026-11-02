@@ -31,6 +31,10 @@ final readonly class SqlQueryCompiler
 
     private function plan(Expression $expression): QueryPlan
     {
+        if ($expression instanceof MethodCallExpression
+            && in_array($expression->method, ['firstOrDefault', 'single', 'all', 'contains'], true)) {
+            return $this->terminalPlan($expression);
+        }
         $operations = [];
         while ($expression instanceof MethodCallExpression) {
             array_unshift($operations, $expression);
@@ -46,7 +50,13 @@ final readonly class SqlQueryCompiler
         }
         $paginationStarted = false;
         $joinedProjection = false;
+        $previousMethod = null;
         foreach ($operations as $operation) {
+            if ($operation->method === 'thenBy' && !in_array($previousMethod, ['orderBy', 'thenBy'], true)) {
+                throw new \LogicException('thenBy() requires a preceding orderBy().');
+            }
+            $previousMethod = $operation->method;
+
             // A projection after grouping changes the element type to an ordinary row.
             // DISTINCT before a new projection, and pagination before DISTINCT/GROUP BY,
             // must also remain inside a derived table.
@@ -82,11 +92,12 @@ final readonly class SqlQueryCompiler
             if ($paginationStarted && $plan->groupKey !== null && in_array($operation->method, ['where', 'orderBy'], true)) {
                 throw new \LogicException('where/orderBy after skip/take requires subquery support.');
             }
-            if ($plan->groupKey !== null && in_array($operation->method, ['where', 'select', 'orderBy'], true)) {
+            if ($plan->groupKey !== null && in_array($operation->method, ['where', 'select', 'orderBy', 'thenBy'], true)) {
                 $argument = match ($operation->method) {
-                    'where' => 'predicate', 'select' => 'selector', 'orderBy' => 'keySelector',
+                    'where' => 'predicate', 'select' => 'selector', 'orderBy', 'thenBy' => 'keySelector',
                 };
                 $value = $this->resolveGrouped($operation->arguments[$argument], $plan->groupKey);
+                if ($operation->method === 'orderBy') $plan->orderings = [];
                 if ($operation->method === 'where') $plan->havingPredicates[] = $value;
                 elseif ($operation->method === 'select') $plan->selection = $value;
                 else $plan->orderings[] = ['expression' => $value, 'descending' => $operation->arguments['descending']];
@@ -129,10 +140,11 @@ final readonly class SqlQueryCompiler
                 throw new \LogicException('where/orderBy after skip/take requires subquery support.');
             }
 
+            if ($operation->method === 'orderBy') $plan->orderings = [];
             match ($operation->method) {
                 'where' => $plan->predicates[] = $operation->arguments['predicate'],
                 'select' => $plan->selection = $operation->arguments['selector'],
-                'orderBy' => $plan->orderings[] = [
+                'orderBy', 'thenBy' => $plan->orderings[] = [
                     'expression' => $operation->arguments['keySelector'],
                     'descending' => $operation->arguments['descending'],
                 ],
@@ -150,6 +162,61 @@ final readonly class SqlQueryCompiler
         return $plan;
     }
 
+    private function terminalPlan(MethodCallExpression $expression): QueryPlan
+    {
+        $plan = $this->plan($expression->source);
+        $method = $expression->method;
+        $predicate = $expression->arguments['predicate'] ?? null;
+        if ($method === 'contains') {
+            if (!$plan->selection instanceof FieldExpression && !$plan->selection instanceof FunctionExpression
+                && !$plan->selection instanceof AggregateExpression) {
+                throw new \LogicException('contains() requires a scalar projection.');
+            }
+            $value = $expression->arguments['value'];
+            if (!is_scalar($value) && $value !== null) {
+                throw new \InvalidArgumentException('SQL contains() accepts scalar values or null.');
+            }
+            $plan->terminalPredicate = new BinaryExpression(new FieldExpression('__linq_value'), '=', new ConstantExpression($value));
+        } elseif ($method === 'all') {
+            $plan->terminalPredicate = $predicate;
+        } elseif ($predicate !== null) {
+            if ($plan->groupKey !== null && $plan->selection === null && $plan->limit === null && $plan->offset === null) {
+                $plan->havingPredicates[] = $this->resolveGrouped($predicate, $plan->groupKey);
+            } elseif ($plan->selection !== null || $plan->limit !== null || $plan->offset !== null || $plan->innerPlan !== null) {
+                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
+                    || $plan->selection instanceof AggregateExpression) {
+                    throw new \LogicException('Use a named projection before a field-based terminal predicate.');
+                }
+                $wrapped = new QueryPlan('__linq_result');
+                $wrapped->sourcePlan = $plan;
+                $wrapped->predicates[] = $predicate;
+                foreach ($plan->orderings as $ordering) {
+                    $wrapped->orderings[] = [
+                        'expression' => $this->projectedOrdering($ordering['expression'], $plan->selection),
+                        'descending' => $ordering['descending'],
+                    ];
+                }
+                $plan = $wrapped;
+            } else {
+                $plan->predicates[] = $predicate;
+            }
+        }
+        if ($plan->terminalPredicate !== null) $this->validateValue($plan->terminalPredicate, false);
+        $plan->terminal = $method;
+        $plan->defaultValue = $expression->arguments['default'] ?? null;
+        return $plan;
+    }
+    private function projectedOrdering(ValueExpression $value, ?ValueExpression $selection): ValueExpression
+    {
+        if ($selection === null) return $value;
+        if ($selection instanceof ProjectionExpression) {
+            foreach ($selection->members as $name => $member) {
+                if ($member == $value) return new FieldExpression($name);
+            }
+        }
+        if ($value instanceof ConstantExpression) return $value;
+        throw new \LogicException('Include ordering keys in the named projection before a terminal predicate.');
+    }
     private function validatePlan(QueryPlan $plan): void
     {
         if ($plan->groupKey !== null && $plan->selection === null) {
