@@ -7,10 +7,15 @@ namespace PhpEntity;
 /** Runtime metadata. Usually discovered from the database schema. */
 final readonly class EntityMapping
 {
+    /** @var non-empty-list<string> */
     public array $keys;
     public ?string $generatedKeyProperty;
 
-    /** @param class-string $class @param non-empty-list<string> $properties */
+    /**
+     * @param class-string $class
+     * @param non-empty-list<string> $properties
+     * @param string|non-empty-list<string> $key
+     */
     public function __construct(
         public string $class,
         public string $table,
@@ -20,8 +25,9 @@ final readonly class EntityMapping
         public array $columns = [],
     ) {
         $this->keys = is_array($key) ? array_values($key) : [$key];
-        if ($this->keys === [] || count(array_unique($this->keys)) !== count($this->keys)
-            || array_filter($this->keys, fn ($name) => !is_string($name) || !in_array($name, $properties, true))) {
+        if ($this->keys === []
+            || array_filter($this->keys, fn ($name) => !is_string($name) || !in_array($name, $properties, true))
+            || count(array_unique($this->keys)) !== count($this->keys)) {
             throw new \InvalidArgumentException('Mapping requires unique mapped primary-key columns.');
         }
         $generated = array_values(array_filter($this->keys, fn ($name) => ($columns[$name] ?? null)?->generated));
@@ -55,7 +61,12 @@ final readonly class EntityMapping
         if ($keys === []) {
             throw new \LogicException("At least one primary key is required.");
         }
-        return new self($class, $table, array_column($columns, "name"), count($keys) === 1 ? $keys[0]->name : array_column($keys, 'name'), array_filter($keys, fn ($c) => $c->generated) !== [], array_column($columns, null, "name"));
+        return new self(
+            $class, $table, array_column($columns, 'name'),
+            count($keys) === 1 ? $keys[0]->name : array_column($keys, 'name'),
+            array_filter($keys, fn ($c) => $c->generated) !== [],
+            array_column($columns, null, 'name'),
+        );
     }
 
     /** Extract a complete key in mapping order. */
@@ -112,7 +123,7 @@ final readonly class EntityMapping
             $initialized = $reflection->hasProperty($name)
                 ? $reflection->getProperty($name)->isInitialized($entity)
                 : ($entity instanceof Entity && $entity->hasValue($name));
-            if (($name === $this->generatedKeyProperty) || $column?->computed || !$initialized) {
+            if ($name === $this->generatedKeyProperty || $column?->computed || !$initialized) {
                 unset($values[$name]);
             }
         }

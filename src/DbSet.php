@@ -77,7 +77,10 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->context->materialize($this->mapping, $this->query->first($predicate));
     }
 
-    /** @return T|null */
+    /**
+     * @param int|string|array<string, scalar> $key Scalar for a single key; named components for a composite key.
+     * @return T|null
+     */
     public function find(int|string|array $key): ?object
     {
         if (!$this->root) {

@@ -34,7 +34,8 @@ class CompositeKeyTest extends TestCase
         $this->pdo = new PDO('sqlite::memory:');
         $this->pdo->exec("CREATE TABLE items (
             order_id VARCHAR(100) NOT NULL, product_id VARCHAR(100) NOT NULL,
-            quantity INT NOT NULL DEFAULT 1, label VARCHAR(100) NOT NULL UNIQUE,
+            quantity INT NOT NULL DEFAULT 1,
+            doubled INT GENERATED ALWAYS AS (quantity * 2) STORED, label VARCHAR(100) NOT NULL UNIQUE,
             PRIMARY KEY (order_id, product_id)
         )");
         $this->openContext();
@@ -64,6 +65,7 @@ class CompositeKeyTest extends TestCase
         self::assertSame(0, $this->items->count());
         self::assertSame(3, $this->db->saveChanges());
         self::assertSame(1, $a->quantity); // Database default was reloaded.
+        self::assertSame(2, $a->doubled);
         self::assertSame(0, $this->db->saveChanges());
         $this->openContext();
         $a = $this->items->find(['product_id' => '20', 'order_id' => '100']);
@@ -71,6 +73,7 @@ class CompositeKeyTest extends TestCase
         self::assertSame($a, $this->items->find(['order_id' => '100', 'product_id' => '20']));
         $a->quantity = 7;
         self::assertSame(1, $this->db->saveChanges());
+        self::assertSame(14, $a->doubled);
         self::assertSame([7, 1, 1], array_map('intval', $this->pdo->query('SELECT quantity FROM items ORDER BY label')->fetchAll(PDO::FETCH_COLUMN)));
         $this->items->remove($a);
         self::assertSame(1, $this->db->saveChanges());
@@ -235,6 +238,34 @@ class CompositeKeyTest extends TestCase
         self::assertSame(2, (int) $this->pdo->query('SELECT COUNT(*) FROM links')->fetchColumn());
         $this->expectException(\PDOException::class);
         $this->pdo->exec('INSERT INTO links (a,b) VALUES (1,2)');
+    }
+
+    public function testKeylessTableIsStillRejected(): void
+    {
+        $this->pdo->exec('CREATE TABLE keyless (value INT)');
+        $this->expectException(\LogicException::class);
+        (new DbContext($this->pdo))->set(CompositeItem::class, 'keyless');
+    }
+
+    public static function invalidMappings(): iterable
+    {
+        yield 'empty' => [[]];
+        yield 'duplicate' => [['order_id', 'order_id']];
+        yield 'unmapped' => [['order_id', 'missing']];
+        yield 'non-string' => [['order_id', []]];
+    }
+
+    #[DataProvider('invalidMappings')]
+    public function testInvalidKeyMappingsAreRejected(array $keys): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new EntityMapping(CompositeItem::class, 'items', ['order_id', 'product_id'], $keys, false);
+    }
+
+    public function testAmbiguousGeneratedCompositeMappingIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new EntityMapping(CompositeItem::class, 'items', ['order_id', 'product_id'], ['order_id', 'product_id']);
     }
 
     public function testSqliteRejectsGeneratedCompositeMigration(): void

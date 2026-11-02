@@ -216,7 +216,8 @@ class DbContext
     private function keyWhere(EntityMapping $mapping, array $values): array
     {
         $keys = $mapping->keyValues($values);
-        return [implode(' AND ', array_map(fn ($key) => $this->quote($key).' = ?', array_keys($keys))), array_values($keys)];
+        $conditions = array_map(fn ($key) => $this->quote($key).' = ?', array_keys($keys));
+        return [implode(' AND ', $conditions), array_values($keys)];
     }
 
     private function quote(string $name): string { return $this->dialect->quoteIdentifier($name); }

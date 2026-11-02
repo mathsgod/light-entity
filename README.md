@@ -75,15 +75,47 @@ Entities are tracked by identity and snapshots. Re-querying a tracked key return
 
 `saveChanges()` uses its own transaction unless a facade transaction is active, and returns saved entity write operations, not database affected-row counts. Transactions opened directly on PDO are rejected by `saveChanges()`; use `$db->database->beginTransaction()` to share a transaction. Failed writes retain pending changes for retry without assigning generated IDs or database defaults to entities. Changing a tracked primary key is rejected. Constructors are bypassed during hydration.
 
-Explicit `EntityMapping` objects remain an optional override for existing callers. Automatic schema discovery requires exactly one primary-key column. SQLite uses rowid-backed INTEGER primary keys for generated IDs; MySQL/MariaDB use AUTO_INCREMENT. Generated IDs use PDO `lastInsertId()`.
+Explicit `EntityMapping` objects remain an optional override for existing callers. Automatic schema discovery requires at least one primary-key column and supports composite keys. SQLite uses rowid-backed INTEGER primary keys for generated IDs; MySQL/MariaDB use AUTO_INCREMENT. Generated IDs use PDO `lastInsertId()`.
+
+## Composite primary keys
+
+Existing tables with composite primary keys are discovered automatically. Use a
+named key array for `find()`; component order does not matter:
+
+```php
+$items = $db->set(OrderItem::class, 'order_items');
+$item = $items->find(['order_id' => 100, 'product_id' => 20]);
+$item->quantity = 3;
+$db->saveChanges(); // WHERE order_id = ? AND product_id = ?
+```
+
+Single-key `find(123)` remains supported. All key components must be provided
+and non-null. Tracking compares the full tuple, and tracked key components
+cannot be changed. Updates, deletes and reloads use every key component.
+
+For explicit mappings, pass the key column list and disable generated keys when
+all components are manually assigned:
+
+```php
+$mapping = new EntityMapping(
+    OrderItem::class, 'order_items', ['order_id', 'product_id', 'quantity'],
+    key: ['order_id', 'product_id'], generatedKey: false,
+);
+```
+
+For a composite key with one auto-increment component, automatic discovery
+identifies that column. Explicit mappings with `generatedKey: true` must mark
+exactly one key column as `generated` in their `columns` metadata. The generated
+value is combined with the other components to reload the inserted row, and is
+assigned to the entity only after a successful save.
 
 ## Setup and tests
 
 Keep this repository alongside `php-linq` and run `composer install`. The path repository in `composer.json` is for local development; consuming applications must configure their own path repository until a suitable php-linq release is available.
 
-Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite currently runs against SQLite.
+Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite runs against SQLite. The MySQL suite also covers composite-key persistence, tracking, migrations and rollback/retry, including auto-increment key components.
 
-No relationship loading, migration version/history management, custom entity column aliases, composite entity primary keys, optimistic concurrency, async operations or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
+No relationship loading, migration version/history management, custom entity column aliases, optimistic concurrency, async operations or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
 
 ## Adding multiple entities
 
@@ -212,7 +244,9 @@ $mapping = $db->model->findEntityType(User::class); // null until loaded
 // Reads the schema only if not already cached. No prior set() is needed.
 $mapping = $db->model->getEntityType(User::class);
 $mapping->table;
-$mapping->key;
+$mapping->key; // Legacy single-key name, or a composite-key array.
+$mapping->keys; // Always a list of primary-key column names.
+$mapping->generatedKeyProperty; // Generated key column name, or null.
 $mapping->properties;
 $mapping->columns['name']->type;
 
@@ -263,7 +297,7 @@ $rows = $orders->leftJoin(
 returns null for their inner fields. Null keys do not match, including null
 against null. Duplicate matches produce multiple result rows. Key selectors
 may use `Expr::projection()` for composite keys with matching member names and
-order; this does not add composite entity primary-key support.
+order; join keys are independent of entity primary-key configuration.
 
 Result selectors use `outer.*` and `inner.*`. Subsequent filters, ordering and
 projections address the selected result names (`order_id`, `customer_name` in
@@ -359,14 +393,16 @@ $users = $db->set(User::class, 'users');
 
 `integer()` and `string($name, $length = 255)` create non-nullable columns by
 default. Column options are `nullable()`, `autoIncrement()` and `primaryKey()`;
-each accepts an optional boolean. Auto-increment requires the single integer
-primary key. A plain integer primary key remains manually assigned, including
+each accepts an optional boolean. Mark multiple columns with `primaryKey()` to
+create a composite primary key. Auto-increment requires an integer primary-key
+column; only one auto-increment column is allowed. SQLite rejects auto-increment
+in composite keys; MySQL requires that column first in the primary key. A plain integer primary key remains manually assigned, including
 on SQLite. Tables without a primary key can be created, but entity mapping
-still requires exactly one primary key.
+still requires at least one primary-key column.
 
 Multiple `createTable()` calls queue multiple statements in order. Empty
 tables, duplicate column names, invalid string lengths, nullable primary keys
-and multiple primary keys are rejected before the operation is queued. Table
+and multiple auto-increment columns are rejected before the operation is queued. Table
 names may use `schema.table`; column names are quoted as literal identifiers.
 The database still enforces its own identifier, row-size and type limits.
 SQLite accepts VARCHAR lengths as metadata but does not enforce those lengths.
