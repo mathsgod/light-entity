@@ -424,3 +424,44 @@ schemas.
 `composer test:mysql` also runs the migration contract against Docker MySQL 8,
 including preview, schema discovery, generated/manual keys, ORM persistence,
 identifier escaping and the transaction guard.
+
+## FK relationship getters
+
+Entities extending `Entity` support lazy relationship getters after loading or
+adding them through a `DbContext`. SQLite and MySQL foreign keys determine the
+relationship direction; a UNIQUE constraint on the FK makes the inverse singular.
+
+```php
+// orders.client_id REFERENCES clients(id)
+$client = $db->set(Client::class)->find(1);
+$orders = $client->getOrders(); // DbSet: supports where(), count(), toArray(), etc.
+$client = $orders->first()->getClient(); // entity or null
+```
+
+The resolver uses a registered table mapping first, then looks for the conventional
+singular class name in the source entity's namespace and the global namespace.
+Otherwise it uses `DynamicEntity`. Related rows participate in identity tracking
+and `saveChanges()`, including dynamic rows. Plain classes that do not extend
+`Entity` can still be relationship targets, but do not gain magic getters.
+
+Missing collection rows return an empty `DbSet`; missing singular rows or nullable
+FKs return `null`. Unknown or ambiguous relationships throw
+`BadMethodCallException`. Getter calls accept no arguments. Schema metadata is
+cached per context; create a new context after changing the schema. Results are
+queried on demand so changing an entity's FK changes the next getter result.
+
+With multiple FKs, use a column-based getter such as `getBillingClient()` for
+`billing_client_id`, or configure an explicit getter. Explicit mappings also
+support irregular table names and custom class names:
+
+```php
+$db->relationship(Order::class, 'Client', 'clients', ['client_id'], Client::class);
+$db->relationship(Client::class, 'Purchases', 'orders', ['client_id'], Order::class);
+$client->getPurchases();
+```
+
+The column list identifies the FK on its owning table in declaration order,
+including composite FKs. Overrides still require a real database FK. Naming uses
+basic English singularization (including people/person and children/child);
+use explicit mappings for other naming conventions. Relationship getters perform
+lazy queries; looping over many parents can produce one query per parent.

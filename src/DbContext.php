@@ -15,6 +15,7 @@ class DbContext
     private \SplObjectStorage $entries;
     private SqlQueryProvider $provider;
     private SqlDialect $dialect;
+    private RelationshipResolver $relationships;
 
     /** @param iterable<EntityMapping> $mappings */
     public function __construct(private PDO $pdo, ?SqlDialect $dialect = null, iterable $mappings = [])
@@ -29,6 +30,7 @@ class DbContext
         $this->entries = new \SplObjectStorage();
         $this->model = new Model(new \PhpEntity\Schema\SchemaReader($pdo), $mappings);
         $this->provider = new SqlQueryProvider($pdo, $this->dialect);
+        $this->relationships = new RelationshipResolver(new \PhpEntity\Schema\SchemaReader($pdo), $this->model);
     }
 
     /** @template T of object @param class-string<T> $class @return DbSet<T> */
@@ -36,6 +38,30 @@ class DbContext
     {
         $mapping = $this->model->getEntityType($class, $table);
         return new DbSet($this, $mapping, Queryable::from($this->provider, $mapping->table));
+    }
+
+    /** Override a getter using an exact target table and FK column(s). */
+    public function relationship(string $class, string $name, string $table, array $foreignColumns, ?string $targetClass = null): void
+    {
+        $this->relationships->configure($class, $name, $table, $foreignColumns, $targetClass);
+    }
+
+    /** @internal */
+    public function related(Entity $entity, EntityMapping $source, string $name): mixed
+    {
+        $relation = $this->relationships->resolve($source, $name);
+        $mapping = $relation['mapping'];
+        $set = new DbSet($this, $mapping, Queryable::from($this->provider, $mapping->table));
+        foreach ($relation['local'] as $i => $column) {
+            $value = $entity->$column ?? null;
+            if ($value === null && !$relation['many']) { return null; }
+            $set = $set->where(\PhpLinq\Expr::eq(\PhpLinq\Expr::field($relation['remote'][$i]), $value));
+        }
+        // A missing key on an unsaved entity must never match unrelated nullable FKs.
+        foreach ($relation['local'] as $column) {
+            if (($entity->$column ?? null) === null) { return $set->take(0); }
+        }
+        return $relation['many'] ? $set : ($set->take(1)->toArray()[0] ?? null);
     }
 
     public function add(string $class, object $entity): void
@@ -56,6 +82,7 @@ class DbContext
         }
         $this->assertIdentityAvailable($mapping, $values, $entity);
         $this->entries[$entity] = [$mapping, 'added', $values];
+        if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping); }
     }
 
     public function remove(string $class, object $entity): void
@@ -106,6 +133,7 @@ class DbContext
             return $entity;
         }
         $entity = $mapping->hydrate($row);
+        if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping); }
         $this->entries[$entity] = [$mapping, 'unchanged', $mapping->values($entity)];
         return $entity;
     }
