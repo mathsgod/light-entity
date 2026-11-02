@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
-use PhpEntity\Migrations\MigrationBuilder;
-use PhpEntity\Migrations\MigrationSqlGenerator;
-use PhpEntity\Migrations\TableBuilder;
-use PhpEntity\Sql\MySqlDialect;
-use PhpEntity\Sql\PostgreSqlDialect;
-use PhpEntity\Sql\SqliteDialect;
+use Light\Entity\Migrations\MigrationBuilder;
+use Light\Entity\Migrations\MigrationSqlGenerator;
+use Light\Entity\Migrations\TableBuilder;
+use Light\Entity\Sql\MySqlDialect;
+use Light\Entity\Sql\PostgreSqlDialect;
+use Light\Entity\Sql\SqliteDialect;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

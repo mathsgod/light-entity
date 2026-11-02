@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 /**
  * A live view of an entity's tracking record. Value arrays are read-only copies.

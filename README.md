@@ -1,4 +1,4 @@
-# php-entity
+# light-entity
 
 An experimental PHP 8.3+ database-first ORM built on PDO and `mathsgod/php-linq`. Independent of light-db and Laminas DB.
 
@@ -7,9 +7,9 @@ An experimental PHP 8.3+ database-first ORM built on PDO and `mathsgod/php-linq`
 The first `set()` or `model->getEntityType()` for an entity reads the database schema to discover columns, database types, nullability, primary key, generated identity, defaults and computed columns. Metadata is cached per context. No scaffolding command or property list is required.
 
 ```php
-use PhpEntity\DbContext;
-use PhpEntity\Entity;
-use PhpLinq\Expr;
+use Light\Entity\DbContext;
+use Light\Entity\Entity;
+use Light\Linq\Expr;
 
 // Defaults to the table "users". No manually declared properties required.
 final class User extends Entity {}
@@ -38,7 +38,7 @@ Entity queries require existing tables. The optional MigrationBuilder can create
 The default naming convention is snake_case class name plus `s` (`User` → `users`, `OrderItem` → `order_items`). Irregular plurals are not inferred. Override with an attribute:
 
 ```php
-use PhpEntity\Table;
+use Light\Entity\Table;
 
 #[Table('people')]
 final class Person extends Entity {}
@@ -146,23 +146,23 @@ $db->saveChanges();
 
 ## Direct SQL query provider
 
-`PhpEntity\SqlQueryProvider` implements `PhpLinq\IQueryProvider` and executes php-linq expression trees through PDO.
+`Light\Entity\SqlQueryProvider` implements `Light\Linq\IQueryProvider` and executes php-linq expression trees through PDO.
 It returns rows/scalars directly; use `DbSet` for tracked entity objects.
-SQL compilation and dialects live in this package under `PhpEntity\Sql`; php-linq supplies the database-independent query operators and expression trees.
+SQL compilation and dialects live in this package under `Light\Entity\Sql`; php-linq supplies the database-independent query operators and expression trees.
 
 The available dialects are `MySqlDialect`, `SqlServerDialect`,
 `PostgreSqlDialect`, and `SqliteDialect`. They handle identifier quoting and
 pagination syntax and emit query values as bound parameters. Dialect availability
 does not imply automatic schema discovery support for every database.
 
-SQL compiler and dialect classes have moved from `PhpLinq\Sql` to
-`PhpEntity\Sql`; update those imports when upgrading. JOIN SQL translation also lives in this package.
+SQL compiler and dialect classes have moved from `Light\Linq\Sql` to
+`Light\Entity\Sql`; update those imports when upgrading. JOIN SQL translation also lives in this package.
 
 
 ```php
-use PhpEntity\SqlQueryProvider;
-use PhpLinq\Queryable;
-use PhpEntity\Sql\MySqlDialect;
+use Light\Entity\SqlQueryProvider;
+use Light\Linq\Queryable;
+use Light\Entity\Sql\MySqlDialect;
 
 $users = Queryable::from(
     new SqlQueryProvider($pdo, new MySqlDialect()),
@@ -170,8 +170,8 @@ $users = Queryable::from(
 );
 ```
 
-The former `PhpLinq\SqlQueryProvider` class has moved to this package; update
-imports to `PhpEntity\SqlQueryProvider` and add the php-entity dependency.
+The former `Light\Linq\SqlQueryProvider` class has moved to this package; update
+imports to `Light\Entity\SqlQueryProvider` and add the php-entity dependency.
 
 ## DatabaseFacade
 
@@ -246,7 +246,7 @@ made atomic by the facade; keep schema changes outside these transactions.
 ## Model metadata
 
 Each context exposes a readonly `$db->model` property implementing
-`PhpEntity\IModel`. `Model` owns the per-context mapping cache previously kept
+`Light\Entity\IModel`. `Model` owns the per-context mapping cache previously kept
 inside `DbContext`; queries and writes use the same metadata instances.
 
 ```php
@@ -284,7 +284,7 @@ current entity/column mappings; relationship metadata is not implemented yet.
 
 ## JOIN queries
 
-`DbSet::join()` and `leftJoin()` return a `PhpLinq\Queryable` of projected
+`DbSet::join()` and `leftJoin()` return a `Light\Linq\Queryable` of projected
 arrays or scalar values, not tracked entities. Both sets must belong to the
 same context. No relationship configuration is required.
 
@@ -384,8 +384,8 @@ access the database. The following callback API is supported for MySQL and
 SQLite:
 
 ```php
-use PhpEntity\Migrations\MigrationBuilder;
-use PhpEntity\Migrations\TableBuilder;
+use Light\Entity\Migrations\MigrationBuilder;
+use Light\Entity\Migrations\TableBuilder;
 
 $migration = new MigrationBuilder();
 $migration->createTable('users', function (TableBuilder $table) {
@@ -421,8 +421,8 @@ The database still enforces its own identifier, row-size and type limits.
 SQLite accepts VARCHAR lengths as metadata but does not enforce those lengths.
 
 For offline SQL generation, use
-`new MigrationSqlGenerator(new MySqlDialect())` from `PhpEntity\Migrations`
-and `PhpEntity\Sql`, then call `generate($migration)` to obtain a list of SQL
+`new MigrationSqlGenerator(new MySqlDialect())` from `Light\Entity\Migrations`
+and `Light\Entity\Sql`, then call `generate($migration)` to obtain a list of SQL
 statements. PostgreSQL and SQL Server DDL generation are not implemented yet.
 
 This first version supports CREATE TABLE only. It does not implement ALTER or
@@ -525,7 +525,7 @@ inserting a new entity. Another tracked instance with the same key is rejected.
 Use EF Core-style entry names to inspect tracking state and snapshots:
 
 ```php
-use PhpEntity\EntityState;
+use Light\Entity\EntityState;
 
 $entry = $db->entry($order);
 $entry->state;          // EntityState::Unchanged, Modified, Added, Deleted, or Detached.
@@ -559,7 +559,7 @@ $db->changeTracker->queryTrackingBehavior = QueryTrackingBehavior::NoTracking;
 $trackedUsers = $db->set(User::class)->asTracking()->toArray();
 ```
 
-Import `PhpEntity\QueryTrackingBehavior` for the context setting. Query overrides
+Import `Light\Entity\QueryTrackingBehavior` for the context setting. Query overrides
 are immutable and the last override wins. Includes and relationship getters inherit
 the source query's mode. NoTracking edits are not automatically saved, while
 explicit `add()`, `remove()`, or entry state assignments still opt into writes.
@@ -618,7 +618,7 @@ See [Composable Raw SQL](docs/from-sql-raw.md) for examples and dialect limitati
 ### Grouping, aggregates and distinct values
 
 ```php
-use PhpLinq\Expr;
+use Light\Linq\Expr;
 
 $totals = $orders
     ->groupBy(Expr::field('CustomerId'))

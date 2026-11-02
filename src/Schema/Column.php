@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Schema;
+namespace Light\Entity\Schema;
 
 final readonly class Column
 {

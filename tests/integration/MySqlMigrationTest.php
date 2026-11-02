@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Integration;
+namespace Light\Entity\Tests\Integration;
 
-use PhpEntity\Tests\Support\MySqlDatabase;
-use PhpEntity\DbContext;
-use PhpEntity\Migrations\MigrationBuilder;
-use PhpEntity\Migrations\TableBuilder;
-use PhpEntity\Tests\MigrationExecutionTest;
+use Light\Entity\Tests\Support\MySqlDatabase;
+use Light\Entity\DbContext;
+use Light\Entity\Migrations\MigrationBuilder;
+use Light\Entity\Migrations\TableBuilder;
+use Light\Entity\Tests\MigrationExecutionTest;
 
 final class MySqlMigrationTest extends MigrationExecutionTest
 {

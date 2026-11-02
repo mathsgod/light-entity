@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Integration;
+namespace Light\Entity\Tests\Integration;
 
 use PDO;
-use PhpEntity\{DbContext, Entity, EntityState, SaveChangesInterceptor, Table};
-use PhpEntity\Tests\Support\MySqlDatabase;
+use Light\Entity\{DbContext, Entity, EntityState, SaveChangesInterceptor, Table};
+use Light\Entity\Tests\Support\MySqlDatabase;
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

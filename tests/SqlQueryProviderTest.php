@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
 use PDO;
-use PhpLinq\Expr;
-use PhpLinq\Queryable;
-use PhpEntity\Sql\SqliteDialect;
-use PhpEntity\SqlQueryProvider;
+use Light\Linq\Expr;
+use Light\Linq\Queryable;
+use Light\Entity\Sql\SqliteDialect;
+use Light\Entity\SqlQueryProvider;
 use PHPUnit\Framework\TestCase;
 
 final class SqlQueryProviderTest extends TestCase

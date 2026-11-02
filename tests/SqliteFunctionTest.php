@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\SqliteFunctions;
+namespace Light\Entity\Tests\SqliteFunctions;
 
 use PDO;
-use PhpEntity\{DbContext, Entity, EntityState, Table};
-use PhpLinq\Expr;
-use PhpLinq\Expression\ValueExpression;
+use Light\Entity\{DbContext, Entity, EntityState, Table};
+use Light\Linq\Expr;
+use Light\Linq\Expression\ValueExpression;
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

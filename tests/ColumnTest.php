@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
-use PhpEntity\Schema\Column;
+use Light\Entity\Schema\Column;
 use PHPUnit\Framework\TestCase;
 
 final class ColumnTest extends TestCase

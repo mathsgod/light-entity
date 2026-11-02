@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
 use PDO;
-use PhpEntity\DbContext;
-use PhpEntity\Entity;
-use PhpEntity\Migrations\MigrationBuilder;
-use PhpEntity\Migrations\TableBuilder;
+use Light\Entity\DbContext;
+use Light\Entity\Entity;
+use Light\Entity\Migrations\MigrationBuilder;
+use Light\Entity\Migrations\TableBuilder;
 use PHPUnit\Framework\TestCase;
 
 class MigrationExecutionTest extends TestCase

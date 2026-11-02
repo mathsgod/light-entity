@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
-use PhpEntity\Sql\FunctionExpression;
-use PhpEntity\Sql\SqlFunctionDefinition;
-use PhpLinq\Expression\ConstantExpression;
-use PhpLinq\Expression\ValueExpression;
+use Light\Entity\Sql\FunctionExpression;
+use Light\Entity\Sql\SqlFunctionDefinition;
+use Light\Linq\Expression\ConstantExpression;
+use Light\Linq\Expression\ValueExpression;
 
 /** Context-scoped scalar function mappings and expression construction. */
 final class SqlFunctionRegistry

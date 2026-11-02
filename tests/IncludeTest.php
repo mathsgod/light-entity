@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
-namespace PhpEntity\Tests\Includes;
+namespace Light\Entity\Tests\Includes;
 
 use PDO;
 use PDOStatement;
-use PhpEntity\{DbContext, DynamicEntity, Entity, Table};
-use PhpLinq\Expr;
+use Light\Entity\{DbContext, DynamicEntity, Entity, Table};
+use Light\Linq\Expr;
 use PHPUnit\Framework\TestCase;
 
 #[Table('clients')]

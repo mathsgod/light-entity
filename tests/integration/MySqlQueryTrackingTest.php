@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Integration;
+namespace Light\Entity\Tests\Integration;
 
-use PhpEntity\{DbContext, Entity, EntityState, QueryTrackingBehavior, Table};
-use PhpEntity\Tests\Support\MySqlDatabase;
+use Light\Entity\{DbContext, Entity, EntityState, QueryTrackingBehavior, Table};
+use Light\Entity\Tests\Support\MySqlDatabase;
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

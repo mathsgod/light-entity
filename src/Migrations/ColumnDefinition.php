@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Migrations;
+namespace Light\Entity\Migrations;
 
 /** Immutable column metadata captured after the table callback completes. */
 final readonly class ColumnDefinition

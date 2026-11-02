@@ -61,7 +61,7 @@
 +
 +        // A partial explicit mapping uses associative hydration inside the provider.
 +        // It must invoke the callback too, since DbContext no longer loops afterwards.
-+        $subset = new \PhpEntity\EntityMapping(MySqlFetchRecord::class, 'fetch_records', ['id'],
++        $subset = new \Light\Entity\EntityMapping(MySqlFetchRecord::class, 'fetch_records', ['id'],
 +            generatedKey: false, columns: ['id' => $mapping->columns['id']]);
 +        $attached = [];
 +        $rows = $provider->executeNoTrackingEntities($query->expression(), $subset,

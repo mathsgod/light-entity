@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 use PDO;
-use PhpLinq\IQueryProvider;
-use PhpLinq\Expression\Expression;
-use PhpEntity\Sql\CompiledQuery;
-use PhpEntity\Sql\SqlDialect;
-use PhpEntity\Sql\SqlQueryCompiler;
+use Light\Linq\IQueryProvider;
+use Light\Linq\Expression\Expression;
+use Light\Entity\Sql\CompiledQuery;
+use Light\Entity\Sql\SqlDialect;
+use Light\Entity\Sql\SqlQueryCompiler;
 
 final readonly class SqlQueryProvider implements IQueryProvider
 {
@@ -50,13 +50,13 @@ final readonly class SqlQueryProvider implements IQueryProvider
             return null;
         }
         $source = $expression;
-        while ($source instanceof \PhpLinq\Expression\MethodCallExpression) {
+        while ($source instanceof \Light\Linq\Expression\MethodCallExpression) {
             if (!in_array($source->method, ['where', 'orderBy', 'orderByDescending', 'skip', 'take'], true)) {
                 return null;
             }
             $source = $source->source;
         }
-        if (!$source instanceof \PhpLinq\Expression\SourceExpression || $source->name !== $mapping->table) {
+        if (!$source instanceof \Light\Linq\Expression\SourceExpression || $source->name !== $mapping->table) {
             return null; // Raw SQL may change value types; retain schema conversions.
         }
         $query = $this->compile($expression);

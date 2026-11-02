@@ -4,9 +4,9 @@ require __DIR__ . '/vendor/autoload.php';
 
 use Laminas\Db\Adapter\Adapter;
 use Laminas\Db\Sql\Sql;
-use PhpEntity\DbContext;
-use PhpEntity\Entity;
-use PhpEntity\Table;
+use Light\Entity\DbContext;
+use Light\Entity\Entity;
+use Light\Entity\Table;
 
 #[Table('select_records')]
 final class SelectRecord extends Entity {}
@@ -147,7 +147,7 @@ foreach (['cold', 'warm'] as $mode) foreach (['laminas', 'php-entity', 'light-db
 }
 $pdo = connection();
 $packages = [];
-foreach (['laminas/laminas-db', 'mathsgod/php-entity', 'mathsgod/php-linq', 'mathsgod/light-db'] as $package) {
+foreach (['laminas/laminas-db', 'mathsgod/light-entity', 'mathsgod/php-linq', 'mathsgod/light-db'] as $package) {
     $packages[$package] = ['version' => Composer\InstalledVersions::getPrettyVersion($package), 'reference' => Composer\InstalledVersions::getReference($package)];
 }
 file_put_contents(__DIR__ . '/results.json', json_encode(['workload' => 'select-to-json', 'php' => PHP_VERSION, 'mysql' => $pdo->query('SELECT VERSION()')->fetchColumn(), 'packages' => $packages, 'created_at' => gmdate(DATE_ATOM), 'iterations' => $iterations, 'record_count' => $recordCount, 'summary' => $summary, 'samples' => $samples], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");

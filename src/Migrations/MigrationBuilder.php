@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Migrations;
+namespace Light\Entity\Migrations;
 
 /** Collects schema operations without connecting to or modifying a database. */
 final class MigrationBuilder

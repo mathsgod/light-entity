@@ -101,7 +101,7 @@ This applies to both application-defined `Order` classes and the `DynamicEntity`
 $orders = $client->getOrders();
 ```
 
-`$orders` is a `PhpEntity\DbSet` object, not a PHP array. It represents a query for this client's orders and holds a reference to the same `DbContext`. Conceptually, its query includes:
+`$orders` is a `Light\Entity\DbSet` object, not a PHP array. It represents a query for this client's orders and holds a reference to the same `DbContext`. Conceptually, its query includes:
 
 ```sql
 SELECT * FROM orders WHERE client_id = ?

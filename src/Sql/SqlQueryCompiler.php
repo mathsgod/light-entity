@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Sql;
+namespace Light\Entity\Sql;
 
-use PhpLinq\Expression\Expression;
-use PhpLinq\Expression\AggregateExpression;
-use PhpLinq\Expression\GroupKeyExpression;
-use PhpLinq\Expression\BinaryExpression;
-use PhpLinq\Expression\ConstantExpression;
-use PhpLinq\Expression\FieldExpression;
-use PhpLinq\Expression\LogicalExpression;
-use PhpLinq\Expression\ProjectionExpression;
-use PhpLinq\Expression\ValueExpression;
-use PhpLinq\Expression\MethodCallExpression;
-use PhpLinq\Expression\SourceExpression;
+use Light\Linq\Expression\Expression;
+use Light\Linq\Expression\AggregateExpression;
+use Light\Linq\Expression\GroupKeyExpression;
+use Light\Linq\Expression\BinaryExpression;
+use Light\Linq\Expression\ConstantExpression;
+use Light\Linq\Expression\FieldExpression;
+use Light\Linq\Expression\LogicalExpression;
+use Light\Linq\Expression\ProjectionExpression;
+use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expression\MethodCallExpression;
+use Light\Linq\Expression\SourceExpression;
 
 final readonly class SqlQueryCompiler
 {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Sql;
+namespace Light\Entity\Sql;
 
 final class MySqlDialect extends AbstractSqlDialect
 {

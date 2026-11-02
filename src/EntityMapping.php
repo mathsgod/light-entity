@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 /** Runtime metadata. Usually discovered from the database schema. */
 final readonly class EntityMapping
@@ -68,7 +68,7 @@ final readonly class EntityMapping
         }
     }
 
-    /** @param list<\PhpEntity\Schema\Column> $columns */
+    /** @param list<\Light\Entity\Schema\Column> $columns */
     public static function fromSchema(string $class, string $table, array $columns): self
     {
         $keys = array_values(array_filter($columns, fn ($c) => $c->primary));

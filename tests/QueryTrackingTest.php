@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\QueryTracking;
+namespace Light\Entity\Tests\QueryTracking;
 
 use PDO;
-use PhpEntity\{DbContext, DynamicEntity, Entity, EntityState, QueryTrackingBehavior, SaveChangesInterceptor, Table};
-use PhpLinq\Expr;
+use Light\Entity\{DbContext, DynamicEntity, Entity, EntityState, QueryTrackingBehavior, SaveChangesInterceptor, Table};
+use Light\Linq\Expr;
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

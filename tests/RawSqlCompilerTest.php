@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\RawSql;
+namespace Light\Entity\Tests\RawSql;
 
-use PhpEntity\Sql\{MySqlDialect, PostgreSqlDialect, RawSqlSourceExpression, SqlDialect, SqliteDialect, SqlQueryCompiler, SqlServerDialect};
-use PhpLinq\{Expr, InMemoryQueryProvider, Queryable};
-use PhpLinq\Expression\MethodCallExpression;
+use Light\Entity\Sql\{MySqlDialect, PostgreSqlDialect, RawSqlSourceExpression, SqlDialect, SqliteDialect, SqlQueryCompiler, SqlServerDialect};
+use Light\Linq\{Expr, InMemoryQueryProvider, Queryable};
+use Light\Linq\Expression\MethodCallExpression;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

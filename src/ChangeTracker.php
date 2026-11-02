@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 /** Owns identity tracking, snapshots, change detection and validated state transitions. */
 final class ChangeTracker

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Sql;
+namespace Light\Entity\Sql;
 
-use PhpLinq\Expression\ValueExpression;
+use Light\Linq\Expression\ValueExpression;
 
 final class QueryPlan
 {

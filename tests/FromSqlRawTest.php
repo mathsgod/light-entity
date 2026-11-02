@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\RawSql;
+namespace Light\Entity\Tests\RawSql;
 
 use PDO;
-use PhpEntity\{DbContext, Entity, EntityState, QueryTrackingBehavior, Table};
-use PhpLinq\Expr;
+use Light\Entity\{DbContext, Entity, EntityState, QueryTrackingBehavior, Table};
+use Light\Linq\Expr;
 use PHPUnit\Framework\TestCase;
 
 #[Table('blogs')]

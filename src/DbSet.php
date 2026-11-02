@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
-use PhpLinq\Expr;
-use PhpLinq\Queryable;
-use PhpLinq\Expression\ValueExpression;
+use Light\Linq\Expr;
+use Light\Linq\Queryable;
+use Light\Linq\Expression\ValueExpression;
 
 /** @template T of object @implements \IteratorAggregate<int, T> */
 final readonly class DbSet implements \IteratorAggregate, \Countable
@@ -24,10 +24,10 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     /** Start a composable SQL query on an unfiltered entity set. */
     public function fromSqlRaw(string $sql, array $parameters = []): self
     {
-        if (!$this->root || !$this->query->expression() instanceof \PhpLinq\Expression\SourceExpression) {
+        if (!$this->root || !$this->query->expression() instanceof \Light\Linq\Expression\SourceExpression) {
             throw new \LogicException('fromSqlRaw() requires the root DbSet; apply it before query operators.');
         }
-        $query = new Queryable($this->query->provider(), new \PhpEntity\Sql\RawSqlSourceExpression($sql, $parameters));
+        $query = new Queryable($this->query->provider(), new \Light\Entity\Sql\RawSqlSourceExpression($sql, $parameters));
         return new self($this->context, $this->mapping, $query, false, $this->includes, trackingBehavior: $this->trackingBehavior);
     }
 

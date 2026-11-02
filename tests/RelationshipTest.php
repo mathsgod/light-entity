@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
-namespace PhpEntity\Tests\Relationships;
+namespace Light\Entity\Tests\Relationships;
 
 use PDO;
-use PhpEntity\{DbContext, DbSet, DynamicEntity, Entity, Table};
-use PhpLinq\Expr;
+use Light\Entity\{DbContext, DbSet, DynamicEntity, Entity, Table};
+use Light\Linq\Expr;
 use PHPUnit\Framework\TestCase;
 
 final class Client extends Entity {}

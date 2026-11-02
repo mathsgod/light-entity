@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Migrations;
+namespace Light\Entity\Migrations;
 
 final class ColumnBuilder
 {

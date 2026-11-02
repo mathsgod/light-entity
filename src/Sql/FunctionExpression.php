@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Sql;
+namespace Light\Entity\Sql;
 
-use PhpLinq\Expression\ValueExpression;
+use Light\Linq\Expression\ValueExpression;
 
 /** SQL-only scalar call; the PHP runtime never evaluates the database function. */
 final readonly class FunctionExpression implements ValueExpression

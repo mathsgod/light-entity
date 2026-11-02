@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Integration;
+namespace Light\Entity\Tests\Integration;
 
-use PhpEntity\Tests\CompositeKeyTest;
-use PhpEntity\Tests\CompositeItem;
-use PhpEntity\Tests\Support\MySqlDatabase;
-use PhpEntity\DbContext;
+use Light\Entity\Tests\CompositeKeyTest;
+use Light\Entity\Tests\CompositeItem;
+use Light\Entity\Tests\Support\MySqlDatabase;
+use Light\Entity\DbContext;
 
 final class MySqlCompositeKeyTest extends CompositeKeyTest
 {

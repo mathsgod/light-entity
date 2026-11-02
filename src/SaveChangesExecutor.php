@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 use PDO;
-use PhpEntity\Sql\SqlDialect;
+use Light\Entity\Sql\SqlDialect;
 
 /** Coordinates save hooks, SQL writes, transaction boundaries and snapshot acceptance. */
 final class SaveChangesExecutor

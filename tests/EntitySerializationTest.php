@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
-use PhpEntity\{DbContext, Entity, EntityMapping, QueryTrackingBehavior};
-use PhpEntity\Schema\Column;
+use Light\Entity\{DbContext, Entity, EntityMapping, QueryTrackingBehavior};
+use Light\Entity\Schema\Column;
 use PHPUnit\Framework\TestCase;
 
 class SerializationParent extends Entity
@@ -87,8 +87,8 @@ final class EntitySerializationTest extends TestCase
         if (PHP_VERSION_ID < 80400) {
             self::markTestSkipped('Property hooks require PHP 8.4.');
         }
-        eval('namespace PhpEntity\\Tests;
-            final class HookedSerializationEntity extends \\PhpEntity\\Entity {
+        eval('namespace Light\Entity\\Tests;
+            final class HookedSerializationEntity extends \\Light\Entity\\Entity {
                 public string $name = "raw" { get => strtoupper($this->name); }
                 public string $computed { get => "virtual"; }
             }');

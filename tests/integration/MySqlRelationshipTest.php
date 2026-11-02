@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
-namespace PhpEntity\Tests\Integration;
+namespace Light\Entity\Tests\Integration;
 
-use PhpEntity\{DbContext, DynamicEntity, Entity, Table};
-use PhpEntity\Tests\Support\MySqlDatabase;
+use Light\Entity\{DbContext, DynamicEntity, Entity, Table};
+use Light\Entity\Tests\Support\MySqlDatabase;
 use PHPUnit\Framework\TestCase;
 
 #[Table('clients')]
@@ -48,7 +48,7 @@ final class MySqlRelationshipTest extends TestCase
         $pdo->exec("INSERT INTO notes VALUES (20,10,'hello')");
         $db = new DbContext($pdo);
         $clients = $db->set(RelationClient::class)->include('Orders.Notes')->include('Orders.Client')
-            ->orderBy(\PhpLinq\Expr::field('id'))->toArray();
+            ->orderBy(\Light\Linq\Expr::field('id'))->toArray();
         self::assertSame(2, $clients[0]->getOrders()->count());
         self::assertSame(1, $clients[1]->getOrders()->count());
         self::assertSame([], $clients[2]->getOrders()->toArray());
@@ -80,7 +80,7 @@ final class MySqlRelationshipTest extends TestCase
         $pdo->exec('INSERT INTO profiles VALUES (20,1,1)');
         $db = new DbContext($pdo);
         $clients = $db->set(RelationClient::class)->include('Orders.Client')->include('Profile')
-            ->orderBy(\PhpLinq\Expr::field('region'))->toArray();
+            ->orderBy(\Light\Linq\Expr::field('region'))->toArray();
         $byKey = [];
         foreach ($clients as $client) { $byKey[$client->region.':'.$client->id] = $client; }
         self::assertSame(10, $byKey['1:1']->getOrders()->first()->id);
@@ -89,7 +89,7 @@ final class MySqlRelationshipTest extends TestCase
         self::assertSame([], $byKey['2:1']->getOrders()->toArray());
         self::assertNull($byKey['2:1']->getProfile());
         self::assertSame(11, $byKey['2:2']->getOrders()->first()->id);
-        $paged = $db->set(RelationClient::class)->include('Orders')->orderBy(\PhpLinq\Expr::field('region'))->take(1)->toArray();
+        $paged = $db->set(RelationClient::class)->include('Orders')->orderBy(\Light\Linq\Expr::field('region'))->take(1)->toArray();
         self::assertCount(1, $paged);
         self::assertSame(1, $paged[0]->region);
     }

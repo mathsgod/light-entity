@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 /** Optional base for schema-driven entities without manually declared properties. */
 abstract class Entity implements \JsonSerializable

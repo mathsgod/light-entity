@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 use PDO;
-use PhpEntity\Sql\SqlDialect;
+use Light\Entity\Sql\SqlDialect;
 
 /** Batches relationship queries and keeps loaded results separate from unknown results. */
 final class IncludeLoader

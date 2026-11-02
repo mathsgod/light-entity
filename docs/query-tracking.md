@@ -26,7 +26,7 @@ A detached query result is still a mutable PHP object. NoTracking is a query opt
 Set the default on the context's change tracker:
 
 ```php
-use PhpEntity\QueryTrackingBehavior;
+use Light\Entity\QueryTrackingBehavior;
 
 $db->changeTracker->queryTrackingBehavior = QueryTrackingBehavior::NoTracking;
 
@@ -107,7 +107,7 @@ NoTracking does not disable explicit write operations:
 For example, explicitly persist edits to a previously untracked object:
 
 ```php
-use PhpEntity\EntityState;
+use Light\Entity\EntityState;
 
 $user = $db->set(User::class)->asNoTracking()->find(1);
 

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Sql;
+namespace Light\Entity\Sql;
 
-use PhpLinq\Expression\Expression;
+use Light\Linq\Expression\Expression;
 
 /** A trusted, composable SELECT source with bound values; never an entity table mapping. */
 final readonly class RawSqlSourceExpression implements Expression

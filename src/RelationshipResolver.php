@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
-namespace PhpEntity;
+namespace Light\Entity;
 
-use PhpEntity\Schema\SchemaReader;
+use Light\Entity\Schema\SchemaReader;
 
 /** Context-scoped FK metadata and getter resolution. */
 final class RelationshipResolver

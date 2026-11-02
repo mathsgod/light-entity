@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
-use PhpLinq\Expr;
-use PhpLinq\Expression\MethodCallExpression;
-use PhpLinq\InMemoryQueryProvider;
-use PhpLinq\Queryable;
-use PhpEntity\Sql\MySqlDialect;
-use PhpEntity\Sql\PostgreSqlDialect;
-use PhpEntity\Sql\SqlDialect;
-use PhpEntity\Sql\SqlQueryCompiler;
-use PhpEntity\Sql\SqliteDialect;
-use PhpEntity\Sql\SqlServerDialect;
+use Light\Linq\Expr;
+use Light\Linq\Expression\MethodCallExpression;
+use Light\Linq\InMemoryQueryProvider;
+use Light\Linq\Queryable;
+use Light\Entity\Sql\MySqlDialect;
+use Light\Entity\Sql\PostgreSqlDialect;
+use Light\Entity\Sql\SqlDialect;
+use Light\Entity\Sql\SqlQueryCompiler;
+use Light\Entity\Sql\SqliteDialect;
+use Light\Entity\Sql\SqlServerDialect;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

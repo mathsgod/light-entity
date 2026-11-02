@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Support;
+namespace Light\Entity\Tests\Support;
 
 use PDO;
 

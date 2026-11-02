@@ -1,5 +1,5 @@
 {
-  "name": "mathsgod/php-entity",
+  "name": "mathsgod/light-entity",
   "description": "A PDO-based entity ORM built on php-linq",
   "type": "library",
   "license": "MIT",
@@ -16,7 +16,7 @@
   ],
   "autoload": {
     "psr-4": {
-      "PhpEntity\\": "src/"
+      "Light\\Entity\\": "src/"
     }
   },
   "scripts": {
@@ -28,7 +28,7 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "PhpEntity\\Tests\\": "tests/"
+      "Light\\Entity\\Tests\\": "tests/"
     }
   }
 }

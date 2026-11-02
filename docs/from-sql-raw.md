@@ -3,7 +3,7 @@
 Use `fromSqlRaw()` on a root entity set to start a query from a custom SELECT, then apply normal query operators:
 
 ```php
-use PhpLinq\Expr;
+use Light\Linq\Expr;
 
 $blogs = $db->set(Blog::class)
     ->fromSqlRaw('SELECT * FROM blogs')

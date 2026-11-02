@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Sql;
+namespace Light\Entity\Sql;
 
 /** Lexes SQL literals/comments before validating and renaming parameter markers. */
 final class RawSqlParser

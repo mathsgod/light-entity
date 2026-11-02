@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Interception;
+namespace Light\Entity\Tests\Interception;
 
 use PDO;
-use PhpEntity\{DbContext, Entity, EntityState, SaveChangesInterceptor, Table};
+use Light\Entity\{DbContext, Entity, EntityState, SaveChangesInterceptor, Table};
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
 use LogicException;
 use PDO;
 use PDOException;
-use PhpEntity\DbContext;
-use PhpEntity\EntityMapping;
-use PhpLinq\Expr;
-use PhpEntity\Sql\SqliteDialect;
+use Light\Entity\DbContext;
+use Light\Entity\EntityMapping;
+use Light\Linq\Expr;
+use Light\Entity\Sql\SqliteDialect;
 use PHPUnit\Framework\TestCase;
 
 final class User
@@ -46,12 +46,12 @@ final class DbContextTest extends TestCase
         $entry = $this->db->update($user);
 
         self::assertSame($user, $entry->entity);
-        self::assertSame(\PhpEntity\EntityState::Modified, $entry->state);
+        self::assertSame(\Light\Entity\EntityState::Modified, $entry->state);
         self::assertSame($user, $this->db->set(User::class)->find(1));
         self::assertSame('Peter', $this->pdo->query('SELECT name FROM users WHERE id = 1')->fetchColumn());
         self::assertSame(1, $this->db->saveChanges());
         self::assertSame('Mary', $this->pdo->query('SELECT name FROM users WHERE id = 1')->fetchColumn());
-        self::assertSame(\PhpEntity\EntityState::Unchanged, $entry->state);
+        self::assertSame(\Light\Entity\EntityState::Unchanged, $entry->state);
         self::assertSame(0, $this->db->saveChanges());
     }
 

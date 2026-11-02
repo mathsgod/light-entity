@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
-use PhpEntity\Schema\SchemaReader;
+use Light\Entity\Schema\SchemaReader;
 
 final class Model implements IModel
 {

@@ -2,20 +2,20 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
 use PDO;
-use PhpEntity\DbContext;
-use PhpEntity\Entity;
-use PhpEntity\Sql\MySqlDialect;
-use PhpEntity\Sql\PostgreSqlDialect;
-use PhpEntity\Sql\SqliteDialect;
-use PhpEntity\Sql\SqlServerDialect;
-use PhpEntity\Sql\SqlQueryCompiler;
-use PhpEntity\SqlQueryProvider;
-use PhpLinq\Expr;
-use PhpLinq\InMemoryQueryProvider;
-use PhpLinq\Queryable;
+use Light\Entity\DbContext;
+use Light\Entity\Entity;
+use Light\Entity\Sql\MySqlDialect;
+use Light\Entity\Sql\PostgreSqlDialect;
+use Light\Entity\Sql\SqliteDialect;
+use Light\Entity\Sql\SqlServerDialect;
+use Light\Entity\Sql\SqlQueryCompiler;
+use Light\Entity\SqlQueryProvider;
+use Light\Linq\Expr;
+use Light\Linq\InMemoryQueryProvider;
+use Light\Linq\Queryable;
 use PHPUnit\Framework\TestCase;
 
 class JoinTest extends TestCase

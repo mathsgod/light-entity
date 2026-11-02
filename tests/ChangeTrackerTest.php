@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Tracking;
+namespace Light\Entity\Tests\Tracking;
 
 use PDO;
-use PhpEntity\{DbContext, Entity, EntityEntry, EntityState, Table};
+use Light\Entity\{DbContext, Entity, EntityEntry, EntityState, Table};
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

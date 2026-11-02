@@ -3,7 +3,7 @@
 Call an installed database scalar function directly as an expression; registration is optional:
 
 ```php
-use PhpLinq\Expr;
+use Light\Linq\Expr;
 
 $score = $db->function('GetCustomScore', Expr::field('user_id'));
 
@@ -102,8 +102,8 @@ A custom context can provide a named PHP method that builds the expression:
 
 ```php
 use PDO;
-use PhpEntity\DbContext;
-use PhpLinq\Expression\ValueExpression;
+use Light\Entity\DbContext;
+use Light\Linq\Expression\ValueExpression;
 
 class MyDbContext extends DbContext
 {

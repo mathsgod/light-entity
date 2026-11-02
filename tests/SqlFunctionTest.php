@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests\Functions;
+namespace Light\Entity\Tests\Functions;
 
 use PDO;
-use PhpEntity\{DbContext, Entity, SqlFunctionRegistry, Table};
-use PhpEntity\Sql\{FunctionExpression, MySqlDialect, PostgreSqlDialect, SqlDialect, SqliteDialect, SqlQueryCompiler, SqlServerDialect};
-use PhpLinq\{Expr, InMemoryQueryProvider, Queryable};
-use PhpLinq\Expression\MethodCallExpression;
+use Light\Entity\{DbContext, Entity, SqlFunctionRegistry, Table};
+use Light\Entity\Sql\{FunctionExpression, MySqlDialect, PostgreSqlDialect, SqlDialect, SqliteDialect, SqlQueryCompiler, SqlServerDialect};
+use Light\Linq\{Expr, InMemoryQueryProvider, Queryable};
+use Light\Linq\Expression\MethodCallExpression;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
-use PhpEntity\WhereFilter;
-use PhpEntity\Sql\{SqlQueryCompiler, SqliteDialect};
-use PhpLinq\{Queryable, InMemoryQueryProvider};
+use Light\Entity\WhereFilter;
+use Light\Entity\Sql\{SqlQueryCompiler, SqliteDialect};
+use Light\Linq\{Queryable, InMemoryQueryProvider};
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class WhereFilterTest extends TestCase
 {
-    private function compile(array $filter): \PhpEntity\Sql\CompiledQuery
+    private function compile(array $filter): \Light\Entity\Sql\CompiledQuery
     {
         $query = Queryable::from(new InMemoryQueryProvider([]), 'users')
             ->where(WhereFilter::parse($filter));

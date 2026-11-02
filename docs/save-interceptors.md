@@ -1,11 +1,11 @@
 # SaveChanges Interceptors
 
-Extend `PhpEntity\SaveChangesInterceptor` to run shared logic around a context's `saveChanges()` operation. Override only the synchronous hooks you need:
+Extend `Light\Entity\SaveChangesInterceptor` to run shared logic around a context's `saveChanges()` operation. Override only the synchronous hooks you need:
 
 ```php
-use PhpEntity\DbContext;
-use PhpEntity\EntityState;
-use PhpEntity\SaveChangesInterceptor;
+use Light\Entity\DbContext;
+use Light\Entity\EntityState;
+use Light\Entity\SaveChangesInterceptor;
 
 final class OrderAuditInterceptor extends SaveChangesInterceptor
 {

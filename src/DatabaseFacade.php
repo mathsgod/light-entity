@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 use PDO;
-use PhpEntity\Migrations\MigrationBuilder;
-use PhpEntity\Migrations\MigrationSqlGenerator;
-use PhpEntity\Sql\MySqlDialect;
-use PhpEntity\Sql\SqliteDialect;
+use Light\Entity\Migrations\MigrationBuilder;
+use Light\Entity\Migrations\MigrationSqlGenerator;
+use Light\Entity\Sql\MySqlDialect;
+use Light\Entity\Sql\SqliteDialect;
 
 /** Database operations sharing the DbContext connection. */
 final class DatabaseFacade

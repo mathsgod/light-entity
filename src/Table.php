@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class Table

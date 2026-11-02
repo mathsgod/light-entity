@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "57b3f481e9cd1fcbb1f49c4dbf7d9c7c",
+    "content-hash": "23023c17422e8ea45ba24f5da3b563ea",
     "packages": [
         {
             "name": "graham-campbell/result-type",
@@ -541,12 +541,12 @@
             }
         },
         {
-            "name": "mathsgod/php-entity",
+            "name": "mathsgod/light-entity",
             "version": "dev-main",
             "dist": {
                 "type": "path",
                 "url": "../..",
-                "reference": "50eb97e133e81cba29c81b3abcb83abb19868d22"
+                "reference": "abb17b76392374a1d8f856a53dd97ef6ea381376"
             },
             "require": {
                 "ext-pdo": "*",
@@ -559,12 +559,12 @@
             "type": "library",
             "autoload": {
                 "psr-4": {
-                    "PhpEntity\\": "src/"
+                    "Light\\Entity\\": "src/"
                 }
             },
             "autoload-dev": {
                 "psr-4": {
-                    "PhpEntity\\Tests\\": "tests/"
+                    "Light\\Entity\\Tests\\": "tests/"
                 }
             },
             "scripts": {
@@ -589,19 +589,19 @@
             "dist": {
                 "type": "path",
                 "url": "../../../php-linq",
-                "reference": "224af514b5c3b1bba490a9e540b808e6b16944e9"
+                "reference": "534aeb84d1060a5412e45ef5de9f5d370eeb717b"
             },
             "require": {
                 "ext-dom": "*",
-                "php": ">=8.2"
+                "php": ">=8.3"
             },
             "require-dev": {
-                "phpunit/phpunit": "^11.5"
+                "phpunit/phpunit": "^12.5"
             },
             "type": "library",
             "autoload": {
                 "psr-4": {
-                    "PhpLinq\\": "src/"
+                    "Light\\Linq\\": "src/"
                 }
             },
             "scripts": {
@@ -1378,7 +1378,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "mathsgod/light-db": 20,
-        "mathsgod/php-entity": 20,
+        "mathsgod/light-entity": 20,
         "mathsgod/php-linq": 20
     },
     "prefer-stable": false,

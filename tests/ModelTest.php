@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Tests;
+namespace Light\Entity\Tests;
 
 use InvalidArgumentException;
 use LogicException;
 use PDO;
-use PhpEntity\DbContext;
-use PhpEntity\Entity;
-use PhpEntity\EntityMapping;
-use PhpEntity\IModel;
-use PhpEntity\Table;
+use Light\Entity\DbContext;
+use Light\Entity\Entity;
+use Light\Entity\EntityMapping;
+use Light\Entity\IModel;
+use Light\Entity\Table;
 use PHPUnit\Framework\TestCase;
 
 #[Table('model_users')]

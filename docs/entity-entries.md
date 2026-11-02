@@ -3,7 +3,7 @@
 `DbContext::entry()` exposes a live view of an entity's tracking information. The API uses EF Core-style names while preserving PHP-ENTITY's snapshot-based tracking.
 
 ```php
-use PhpEntity\EntityState;
+use Light\Entity\EntityState;
 
 $order = $db->set(Order::class)->find(10);
 

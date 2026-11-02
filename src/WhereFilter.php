@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
-use PhpEntity\Sql\NotExpression;
-use PhpLinq\Expr;
-use PhpLinq\Expression\ValueExpression;
+use Light\Entity\Sql\NotExpression;
+use Light\Linq\Expr;
+use Light\Linq\Expression\ValueExpression;
 
 /** Converts GraphQL-compatible filter arrays to parameterized query expressions. */
 final class WhereFilter

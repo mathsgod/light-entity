@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity\Migrations;
+namespace Light\Entity\Migrations;
 
-use PhpEntity\Sql\MySqlDialect;
-use PhpEntity\Sql\SqlDialect;
-use PhpEntity\Sql\SqliteDialect;
+use Light\Entity\Sql\MySqlDialect;
+use Light\Entity\Sql\SqlDialect;
+use Light\Entity\Sql\SqliteDialect;
 
 /** DDL generation is separate from the LINQ query compiler. */
 final readonly class MigrationSqlGenerator

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace PhpEntity;
+namespace Light\Entity;
 
 use PDO;
-use PhpLinq\Queryable;
-use PhpEntity\Sql\SqlDialect;
+use Light\Linq\Queryable;
+use Light\Entity\Sql\SqlDialect;
 
 class DbContext
 {
@@ -23,17 +23,17 @@ class DbContext
     public function __construct(PDO $pdo, ?SqlDialect $dialect = null, iterable $mappings = [], iterable $interceptors = [])
     {
         $dialect ??= match ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) {
-            'sqlite' => new \PhpEntity\Sql\SqliteDialect(),
-            'mysql' => new \PhpEntity\Sql\MySqlDialect(),
+            'sqlite' => new \Light\Entity\Sql\SqliteDialect(),
+            'mysql' => new \Light\Entity\Sql\MySqlDialect(),
             default => throw new \LogicException('Specify a dialect for this database driver.'),
         };
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->database = new DatabaseFacade($pdo);
         $this->functions = new SqlFunctionRegistry();
         $this->changeTracker = new ChangeTracker($this);
-        $this->model = new Model(new \PhpEntity\Schema\SchemaReader($pdo), $mappings);
+        $this->model = new Model(new \Light\Entity\Schema\SchemaReader($pdo), $mappings);
         $this->provider = new SqlQueryProvider($pdo, $dialect);
-        $this->relationships = new RelationshipResolver(new \PhpEntity\Schema\SchemaReader($pdo), $this->model);
+        $this->relationships = new RelationshipResolver(new \Light\Entity\Schema\SchemaReader($pdo), $this->model);
         $this->includeLoader = new IncludeLoader($this, $pdo, $dialect, $this->relationships);
         $this->saveExecutor = new SaveChangesExecutor($this, $this->changeTracker, $this->database, $dialect, fn () => $this->includeLoader->clear());
         foreach ($interceptors as $interceptor) { $this->addInterceptors($interceptor); }
@@ -51,7 +51,7 @@ class DbContext
         $this->functions->register($name, $schema, $parameterCount);
     }
 
-    public function function(string $name, \PhpLinq\Expression\ValueExpression|int|float|string|bool|null ...$arguments): \PhpEntity\Sql\FunctionExpression
+    public function function(string $name, \Light\Linq\Expression\ValueExpression|int|float|string|bool|null ...$arguments): \Light\Entity\Sql\FunctionExpression
     {
         return $this->functions->call($name, ...$arguments);
     }
@@ -78,7 +78,7 @@ class DbContext
         foreach ($relation['local'] as $i => $column) {
             $value = $entity->$column ?? null;
             if ($value === null && !$relation['many']) { return null; }
-            $set = $set->where(\PhpLinq\Expr::eq(\PhpLinq\Expr::field($relation['remote'][$i]), $value));
+            $set = $set->where(\Light\Linq\Expr::eq(\Light\Linq\Expr::field($relation['remote'][$i]), $value));
         }
         // A missing key on an unsaved entity must never match unrelated nullable FKs.
         foreach ($relation['local'] as $column) {
@@ -105,7 +105,7 @@ class DbContext
         foreach ($relation['local'] as $i => $column) {
             $value = $entity->$column ?? null;
             if ($value === null) { return $query->take(0); }
-            $query = $query->where(\PhpLinq\Expr::eq(\PhpLinq\Expr::field($relation['remote'][$i]), $value));
+            $query = $query->where(\Light\Linq\Expr::eq(\Light\Linq\Expr::field($relation['remote'][$i]), $value));
         }
         return $query;
     }
