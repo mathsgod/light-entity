@@ -32,7 +32,7 @@ final readonly class SqlQueryCompiler
     private function plan(Expression $expression): QueryPlan
     {
         if ($expression instanceof MethodCallExpression
-            && in_array($expression->method, ['firstOrDefault', 'single', 'all', 'contains', 'sum', 'average', 'min', 'max'], true)) {
+            && in_array($expression->method, ['firstOrDefault', 'single', 'singleOrDefault', 'last', 'lastOrDefault', 'all', 'contains', 'sum', 'average', 'min', 'max'], true)) {
             return $this->terminalPlan($expression);
         }
         $operations = [];
@@ -104,7 +104,7 @@ final readonly class SqlQueryCompiler
                 continue;
             }
 
-            if (in_array($operation->method, ['join', 'leftJoin'], true)) {
+            if (in_array($operation->method, ['join', 'leftJoin', 'selectMany'], true)) {
                 $inner = $this->plan($operation->arguments['inner']);
                 if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
                     || $plan->selection instanceof AggregateExpression
@@ -115,10 +115,15 @@ final readonly class SqlQueryCompiler
                 $joined = new QueryPlan('__linq_outer');
                 $joined->sourcePlan = $plan;
                 $joined->innerPlan = $inner;
-                $joined->joinType = $operation->method === 'leftJoin' ? 'LEFT' : 'INNER';
-                $joined->joinCondition = $this->joinCondition(
-                    $operation->arguments['outerKey'], $operation->arguments['innerKey'],
-                );
+                if ($operation->method === 'selectMany') {
+                    $joined->collectionPredicate = $operation->arguments['predicate'];
+                    $joined->joinType = $joined->collectionPredicate === null ? 'CROSS' : 'INNER';
+                } else {
+                    $joined->joinType = $operation->method === 'leftJoin' ? 'LEFT' : 'INNER';
+                    $joined->joinCondition = $this->joinCondition(
+                        $operation->arguments['outerKey'], $operation->arguments['innerKey'],
+                    );
+                }
                 $joined->selection = $operation->arguments['resultSelector'];
                 $plan = $joined;
                 $paginationStarted = false;
@@ -211,6 +216,28 @@ final readonly class SqlQueryCompiler
                 $plan->predicates[] = $predicate;
             }
         }
+        if ($method === 'last' || $method === 'lastOrDefault') {
+            if ($plan->orderings === []) {
+                throw new \LogicException('SQL last()/lastOrDefault() requires an explicit orderBy().');
+            }
+            if ($plan->limit !== null || $plan->offset !== null) {
+                $wrapped = new QueryPlan('__linq_result');
+                $wrapped->sourcePlan = $plan;
+                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
+                    || $plan->selection instanceof AggregateExpression) {
+                    $wrapped->selection = new FieldExpression('__linq_value');
+                }
+                foreach ($plan->orderings as $ordering) {
+                    $wrapped->orderings[] = [
+                        'expression' => $this->projectedOrdering($ordering['expression'], $plan->selection),
+                        'descending' => $ordering['descending'],
+                    ];
+                }
+                $plan = $wrapped;
+            }
+            foreach ($plan->orderings as &$ordering) $ordering['descending'] = !$ordering['descending'];
+            unset($ordering);
+        }
         if ($plan->terminalPredicate !== null) $this->validateValue($plan->terminalPredicate, false);
         $plan->terminal = $method;
         $plan->defaultValue = $expression->arguments['default'] ?? null;
@@ -219,6 +246,7 @@ final readonly class SqlQueryCompiler
     private function projectedOrdering(ValueExpression $value, ?ValueExpression $selection): ValueExpression
     {
         if ($selection === null) return $value;
+        if (!$selection instanceof ProjectionExpression && $selection == $value) return new FieldExpression('__linq_value');
         if ($selection instanceof ProjectionExpression) {
             foreach ($selection->members as $name => $member) {
                 if ($member == $value) return new FieldExpression($name);
@@ -233,6 +261,7 @@ final readonly class SqlQueryCompiler
             throw new \LogicException('SQL grouping requires a key/aggregate projection; full groups are not supported.');
         }
         foreach ($plan->predicates as $predicate) $this->validateValue($predicate, false);
+        if ($plan->collectionPredicate !== null) $this->validateValue($plan->collectionPredicate, false);
         foreach (array_merge($plan->havingPredicates,
             $plan->selection === null ? [] : [$plan->selection],
             array_column($plan->orderings, 'expression'),

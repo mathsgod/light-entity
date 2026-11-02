@@ -77,6 +77,15 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->query->select($selector);
     }
 
+    /** Flatten another set into untracked projected rows or scalar values. */
+    public function selectMany(
+        self $inner,
+        ValueExpression $resultSelector,
+        ?ValueExpression $predicate = null,
+    ): Queryable {
+        return $this->query->selectMany($inner->query, $resultSelector, $predicate);
+    }
+
     /** Result fields use outer.* and inner.*; keys are relative to each DbSet. */
     public function join(
         self $inner,
@@ -126,6 +135,24 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     {
         return $this->entityTerminal('single', $predicate);
     }
+    /** @return T|null */
+    public function singleOrDefault(?ValueExpression $predicate = null, ?object $default = null): ?object
+    {
+        return $this->entityTerminal('singleOrDefault', $predicate, $default);
+    }
+
+    /** @return T */
+    public function last(?ValueExpression $predicate = null): object
+    {
+        return $this->entityTerminal('last', $predicate);
+    }
+
+    /** @return T|null */
+    public function lastOrDefault(?ValueExpression $predicate = null, ?object $default = null): ?object
+    {
+        return $this->entityTerminal('lastOrDefault', $predicate, $default);
+    }
+
     public function all(ValueExpression $predicate): bool
     {
         return $this->loaded === null ? $this->query->all($predicate)

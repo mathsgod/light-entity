@@ -48,14 +48,14 @@ abstract class AbstractSqlDialect implements SqlDialect
             'count' => 'count',
             'any' => 'any',
             'all', 'contains' => 'boolean',
-            'firstOrDefault', 'single' => $terminal.'-'.($query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar' : 'row'),
+            'firstOrDefault', 'single', 'singleOrDefault', 'last', 'lastOrDefault' => $terminal.'-'.($query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar' : 'row'),
             'first' => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'first-scalar' : 'first-row',
             default => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar-list' : 'rows',
         };
 
-        if (in_array($terminal, ['first', 'firstOrDefault', 'single'], true)) {
+        if (in_array($terminal, ['first', 'firstOrDefault', 'single', 'singleOrDefault', 'last', 'lastOrDefault'], true)) {
             $query = clone $query;
-            $max = $terminal === 'single' ? 2 : 1;
+            $max = in_array($terminal, ['single', 'singleOrDefault'], true) ? 2 : 1;
             $query->limit = min($query->limit ?? $max, $max);
             $query->terminal = 'sequence';
         } elseif (in_array($terminal, ['count', 'any', 'all', 'contains'], true)
@@ -118,7 +118,11 @@ abstract class AbstractSqlDialect implements SqlDialect
         $sql = 'SELECT '.($query->distinct ? 'DISTINCT ' : '').$pagination['prefix'].$selection.' FROM '.$from;
         if ($query->innerPlan !== null) {
             $sql .= ' '.$query->joinType.' JOIN ('.$this->derivedSequence($query->innerPlan)
-                .') AS '.$this->quoteIdentifier('inner').' ON '.$this->joinValue($query->joinCondition);
+                .') AS '.$this->quoteIdentifier('inner');
+            if ($query->joinType !== 'CROSS') {
+                $sql .= ' ON '.($query->collectionPredicate !== null
+                    ? $this->value($query->collectionPredicate) : $this->joinValue($query->joinCondition));
+            }
         }
 
         if ($query->predicates !== []) {

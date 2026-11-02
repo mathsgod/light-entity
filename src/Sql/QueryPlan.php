@@ -22,6 +22,7 @@ final class QueryPlan
     public ?RawSqlSourceExpression $rawSource = null;
     public ?self $innerPlan = null;
     public ?ValueExpression $joinCondition = null;
+    public ?ValueExpression $collectionPredicate = null;
     public string $joinType = 'INNER';
 
     public ?ValueExpression $selection = null;

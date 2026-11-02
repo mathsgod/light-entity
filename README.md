@@ -727,3 +727,72 @@ The SQL provider executes `AVG`, `MIN` or `MAX` in the database and returns one
 value. Minimum and maximum retain the PDO value type; averages retain numeric
 strings when returned by the driver. SQL Server uses `AVG(CAST(... AS FLOAT))`
 to avoid integer truncation, so its averages use floating-point precision.
+
+### Flattening query sources with selectMany
+
+```php
+$rows = $customers->selectMany(
+    $orders,
+    Expr::projection([
+        'CustomerId' => 'outer.Id',
+        'OrderId' => 'inner.Id',
+    ]),
+    predicate: Expr::eq(Expr::field('outer.Id'), Expr::field('inner.CustomerId')),
+)->toArray();
+```
+
+`Queryable::selectMany($inner, $resultSelector, $predicate = null)` flattens the
+matching inner sequence for every outer element. Both queries must share the
+same provider instance. The result selector and optional predicate reference
+`outer.*` and `inner.*` fields. Without a predicate, every outer/inner pair is
+returned. Empty inner sequences produce no rows; duplicates are preserved.
+Filter, order and page each source before flattening, or use a named result
+projection to compose further field-based query operations afterwards.
+
+This is an explicit expression-based API rather than C#'s collection-selector
+lambda overloads. `Enumerable::selectMany()` continues to accept a PHP callback
+for flattening nested iterables. In-memory Queryable predicates use relational
+null comparisons: nullable field-to-field comparisons do not match nulls;
+explicit null constants perform null tests. Other comparison behavior follows
+PHP types; SQL providers use database types and collations.
+
+The SQL provider translates an independent inner sequence to `CROSS JOIN` and a
+pair predicate to `INNER JOIN ... ON ...`. Sources must return rows; use named
+projections instead of scalar selections as join inputs. Project individual
+columns explicitly, such as `Expr::field('inner.Id')`.
+`DbSet::selectMany($innerSet, $resultSelector, $predicate)` returns an untracked
+Queryable projection. Use `orderBy()` on the flattened result when its order
+matters. Source pagination remains inside each source's derived table.
+
+This implementation does not provide per-outer-row correlated `take()` or
+arbitrary `APPLY`/`LATERAL` subqueries, automatic navigation expansion, or
+`DefaultIfEmpty` outer-join behavior. Correlation belongs in the pair predicate;
+filters on the inner query itself address its own columns.
+
+### Single-or-default and last elements
+
+```php
+$one = $query->singleOrDefault(Expr::eq(Expr::field('Id'), 10), default: null);
+$last = $query->orderBy(Expr::field('CreatedAt'))->thenBy(Expr::field('Id'))->last();
+$optionalLast = $query->orderBy(Expr::field('Id'))->lastOrDefault(default: null);
+```
+
+`singleOrDefault()` returns the default for zero matches and throws
+`UnexpectedValueException` for multiple matches. `last()` throws
+`UnderflowException` when no element matches; `lastOrDefault()` returns the
+default instead. Null and false are valid results and do not trigger defaults.
+The in-memory provider uses sequence order and supports the same predicates and
+defaults as the existing callback-based Enumerable methods.
+
+The SQL provider requires an explicit `orderBy()` for `last()` and
+`lastOrDefault()`. Include a unique tie-breaker with `thenBy()` when deterministic
+results matter. It reverses every ordering and reads at most one row. Existing
+pagination stays in a derived table before the last row is selected; a terminal
+predicate filters the already paged sequence. Ordering keys must be available
+in a named projection, or match a scalar projection when paging a scalar result.
+Field-based terminal predicates after scalar projections require a named
+projection, as with the other single-element terminal methods.
+
+`singleOrDefault()` reads at most two rows. All three methods are also available
+on DbSet, preserving entity materialization, tracking and includes. DbSet default
+values must be objects or null.

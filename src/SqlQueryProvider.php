@@ -35,7 +35,9 @@ final readonly class SqlQueryProvider implements IQueryProvider
             'average', 'min', 'max' => $this->aggregateResult($statement, $query->resultMode),
             'count' => (int) $statement->fetchColumn(),
             'boolean' => (bool) $statement->fetchColumn(),
-            'firstOrDefault-row', 'firstOrDefault-scalar', 'single-row', 'single-scalar' => $this->terminalResult($statement, $query),
+            'firstOrDefault-row', 'firstOrDefault-scalar', 'single-row', 'single-scalar',
+            'singleOrDefault-row', 'singleOrDefault-scalar', 'last-row', 'last-scalar',
+            'lastOrDefault-row', 'lastOrDefault-scalar' => $this->terminalResult($statement, $query),
             'any' => (int) $statement->fetchColumn() > 0,
             'first-row' => $this->first($statement->fetch(PDO::FETCH_ASSOC)),
             'first-scalar' => $this->first($statement->fetchColumn()),
@@ -154,7 +156,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
         try {
             $row = $statement->fetch(PDO::FETCH_ASSOC);
             if ($row === false) {
-                if (str_starts_with($query->resultMode, 'firstOrDefault')) return $query->defaultValue;
+                if (str_contains($query->resultMode, 'OrDefault-')) return $query->defaultValue;
                 throw new \UnderflowException('The sequence contains no matching element.');
             }
             if (str_starts_with($query->resultMode, 'single') && $statement->fetch(PDO::FETCH_ASSOC) !== false) {
