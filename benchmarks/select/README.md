@@ -177,3 +177,39 @@ Entity 實作 JsonSerializable，先取內部 data，再用 get_mangled_object_v
 ## 純 PDO 對照測試
 
 另有不依賴 ORM 的 `pdo-benchmark.php`，執行 `./run-pdo.sh 30 10000`，比較 FETCH_ASSOC/FETCH_CLASS 的 fetch-only 及 SELECT → JSON。方法與實測見 [PDO-README.md](PDO-README.md)。
+
+
+## FETCH_FUNC 實驗
+
+純 PDO 四模式與實際 php-entity 交錯 A/B 已完成；正式 ORM 路徑保留 FETCH_CLASS。暖查詢 FETCH_FUNC prototype 由 33.340 ms 降至 30.144 ms（耗時減少約 9.59%）。方法、重跑指令及完整表格見 [PDO-README.md](PDO-README.md#fetch_func-實驗10000-筆)。
+
+
+## 正式接入 FETCH_FUNC 後的 SELECT → JSON benchmark
+
+Entity 新增內部 initializeFromRow(array) 方法；相容 MySQL NoTracking table 查詢使用 FETCH_FUNC，每列建立一次 Entity，array_combine 組合 statement 欄名與值，整列寫入 data。無臨時 closure 綁定或 private scope 存取。原有相容性條件、nullable boolean 轉換、關聯 context 及 fallback 不變；custom setter、宣告 mapped properties、建構子、raw SQL、BIT/YEAR 等仍走原路徑。
+
+10,000 筆、15 輪三者比較，90 次 JSON 完全一致：
+
+| Library | Mode | Total median ms | P95 ms | Retained MiB | Peak +MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| laminas | cold | 32.982 | 37.538 | 10.366 | 10.366 |
+| php-entity | cold | 38.871 | 42.710 | 14.918 | 14.919 |
+| light-db | cold | 77.621 | 87.427 | 17.710 | 17.711 |
+| laminas | warm | 24.761 | 26.631 | 9.820 | 9.820 |
+| php-entity | warm | 31.295 | 34.818 | 14.627 | 14.627 |
+| light-db | warm | 55.726 | 59.387 | 15.558 | 15.559 |
+
+30 輪交錯 A/B：正式 FETCH_FUNC provider 對照臨時 FETCH_CLASS baseline；只有取回物件那一段不同，其餘程式相同，120 次 JSON 一致。
+
+| Mode | Variant | Total median ms | SELECT/materialization ms | JSON ms | Peak +MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| cold | fetch-class | 42.140 | 29.832 | 12.163 | 14.919 |
+| cold | fetch-func | 38.257 | 26.854 | 11.623 | 14.919 |
+| warm | fetch-class | 32.669 | 22.496 | 10.153 | 14.627 |
+| warm | fetch-func | 29.678 | 19.484 | 10.023 | 14.627 |
+
+正式版本暖查詢耗時減少 9.16%，約省 2.991 ms；RAM 保持 14.627 MiB peak 增量。三者比較及 A/B 在不同時間執行，應分別使用各組內對照。兩組合共 210 次 JSON 輸出亦逐 byte 一致。
+
+驗證：269 項一般測試、254 assertions（162 項因缺少 SQLite 跳過）；66 項 MySQL 整合測試、448 assertions 全數通過。新增 bulk 初始化 NULL/型別/後續修改測試，以及 custom setter fallback 確認。所有測試容器已清理。
+
+重跑三者：`./run.sh 15 10000`；重跑 A/B：`python3 compare-fetch-func.py 30`。完整樣本：`results-json-fetch-func-production-10000.json`、`results-entity-fetch-func-production-10000.json`。

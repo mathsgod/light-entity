@@ -28,6 +28,19 @@ final class DynamicSerializationEntity extends Entity {}
 
 final class EntitySerializationTest extends TestCase
 {
+    public function testBulkInitializationPreservesNullTypesAndSubsequentEdits(): void
+    {
+        $entity = new DynamicSerializationEntity();
+        $values = ['id' => 1, 'name' => 'Mary', 'active' => false, 'optional' => null];
+        $entity->initializeFromRow($values);
+        self::assertSame($values, $entity->jsonSerialize());
+        self::assertTrue($entity->hasValue('optional'));
+        self::assertNull($entity->optional);
+        $entity->name = 'Updated';
+        self::assertSame('Updated', $entity->jsonSerialize()['name']);
+        self::assertSame('Mary', $values['name']);
+    }
+
     public function testMergesInitializedPublicPropertiesAndPreservesValueTypes(): void
     {
         $entity = new SerializationEntity();

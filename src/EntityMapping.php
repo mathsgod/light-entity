@@ -8,7 +8,7 @@ namespace PhpEntity;
 final readonly class EntityMapping
 {
     private \ReflectionClass $reflection;
-    /** @internal Only schema-driven entities with no constructor or custom setters use FETCH_CLASS. */
+    /** @internal Eligibility for native bulk hydration; also compatible with FETCH_CLASS. */
     public bool $pdoFetchClassCompatible;
     /** @var list<string> @internal */
     public array $booleanProperties;

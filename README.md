@@ -559,8 +559,9 @@ the source query's mode. NoTracking edits are not automatically saved, while
 explicit `add()`, `remove()`, or entry state assignments still opt into writes.
 Changing the default does not detach previously tracked entities.
 On MySQL with native prepares and native PDO value types, untracked table queries
-can use `PDO::FETCH_CLASS` to avoid an intermediate row array and per-column
-conversion. This applies to schema-driven `Entity` subclasses with no constructor,
+use `PDO::FETCH_FUNC` to initialize each complete row directly into internal storage,
+avoiding per-field magic setters and per-column conversion. This applies to
+schema-driven `Entity` subclasses with no constructor,
 declared mapped properties, or custom setter. Only schema-marked boolean columns
 are converted after fetching. Raw SQL, tracking, other drivers, and incompatible
 entities retain the existing hydration path. BIT/YEAR mappings also retain the

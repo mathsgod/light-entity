@@ -14,6 +14,30 @@ final class PdoBenchmarkRecord
     public $payload;
 }
 
+// Same storage for both modes: FETCH_CLASS calls __set per field, whereas
+// FETCH_FUNC initializes the complete row in one assignment.
+final class PdoBenchmarkBag implements JsonSerializable
+{
+    private array $data = [];
+
+    public function __set(string $name, mixed $value): void
+    {
+        $this->data[$name] = $value;
+    }
+
+    public static function fromRow(array $row): self
+    {
+        $entity = new self();
+        $entity->data = $row;
+        return $entity;
+    }
+
+    public function jsonSerialize(): array
+    {
+        return $this->data;
+    }
+}
+
 function pdoConnection(): PDO
 {
     return new PDO(
@@ -27,9 +51,20 @@ function pdoConnection(): PDO
 
 function pdoFetch(PDOStatement $statement, string $mode): array
 {
-    return $mode === 'assoc'
-        ? $statement->fetchAll(PDO::FETCH_ASSOC)
-        : $statement->fetchAll(PDO::FETCH_CLASS, PdoBenchmarkRecord::class);
+    if ($mode === 'func') {
+        $columns = [];
+        for ($i = 0; $i < $statement->columnCount(); $i++) {
+            $columns[] = $statement->getColumnMeta($i)['name'];
+        }
+        return $statement->fetchAll(PDO::FETCH_FUNC, static fn (...$values) =>
+            PdoBenchmarkBag::fromRow(array_combine($columns, $values)));
+    }
+    return match ($mode) {
+        'assoc' => $statement->fetchAll(PDO::FETCH_ASSOC),
+        'class' => $statement->fetchAll(PDO::FETCH_CLASS, PdoBenchmarkRecord::class),
+        'magic' => $statement->fetchAll(PDO::FETCH_CLASS, PdoBenchmarkBag::class),
+        default => throw new InvalidArgumentException('Invalid fetch mode'),
+    };
 }
 
 function pdoPercentile(array $values, float $p): float
@@ -70,7 +105,7 @@ if ($action === 'seed') {
 if ($action === 'worker') {
     $mode = $argv[2] ?? '';
     $workload = $argv[3] ?? '';
-    if (!in_array($mode, ['assoc', 'class'], true) || !in_array($workload, ['fetch', 'json'], true)) {
+    if (!in_array($mode, ['assoc', 'class', 'magic', 'func'], true) || !in_array($workload, ['fetch', 'json'], true)) {
         throw new InvalidArgumentException('Invalid worker mode/workload');
     }
     $pdo = pdoConnection();
@@ -117,7 +152,12 @@ if ($iterations === false) throw new InvalidArgumentException('At least 3 rounds
 $samples = [];
 $checksum = null;
 for ($i = 0; $i < $iterations; $i++) {
-    $cases = [['assoc', 'fetch'], ['class', 'fetch'], ['assoc', 'json'], ['class', 'json']];
+    $cases = [];
+    foreach (['assoc', 'class', 'magic', 'func'] as $mode) {
+        foreach (['fetch', 'json'] as $workload) {
+            $cases[] = [$mode, $workload];
+        }
+    }
     shuffle($cases);
     foreach ($cases as [$mode, $workload]) {
         $pipes = [];
@@ -139,7 +179,7 @@ for ($i = 0; $i < $iterations; $i++) {
 fwrite(STDERR, "\n");
 $summary = [];
 printf("%-6s %-8s %10s %10s %10s %10s %10s %10s\n", 'Mode', 'Workload', 'Total ms', 'P95 ms', 'Fetch ms', 'JSON ms', 'RAM +MiB', 'Peak +MiB');
-foreach (['fetch', 'json'] as $workload) foreach (['assoc', 'class'] as $mode) {
+foreach (['fetch', 'json'] as $workload) foreach (['assoc', 'class', 'magic', 'func'] as $mode) {
     $group = array_values(array_filter($samples, fn($s) => $s['mode'] === $mode && $s['workload'] === $workload));
     $row = ['mode' => $mode, 'workload' => $workload,
         'median_ms' => pdoPercentile(array_column($group, 'ms'), .5),
@@ -156,6 +196,6 @@ $pdo = pdoConnection();
 file_put_contents(__DIR__."/results-pdo-$recordCount.json", json_encode([
     'php' => PHP_VERSION, 'mysql' => $pdo->query('SELECT VERSION()')->fetchColumn(),
     'created_at' => gmdate(DATE_ATOM), 'iterations' => $iterations, 'record_count' => $recordCount,
-    'sql' => $sql, 'class' => 'Seven declared untyped public properties; no constructor, setters or JsonSerializable',
+    'sql' => $sql, 'class' => 'class: seven declared public properties; magic/func: same private-array JsonSerializable bag, per-field setter vs bulk row assignment',
     'summary' => $summary, 'samples' => $samples,
 ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n");

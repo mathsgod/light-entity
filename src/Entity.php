@@ -20,6 +20,12 @@ abstract class Entity implements \JsonSerializable
         $this->relationTracking = $tracking;
     }
 
+    /** @internal Bulk initialization for validated, schema-driven native hydration. */
+    final public function initializeFromRow(array $values): void
+    {
+        $this->data = $values;
+    }
+
     public function __call(string $name, array $arguments): mixed
     {
         if ($arguments !== [] || !preg_match('/^get[A-Z]/', $name)) {

@@ -29,6 +29,18 @@ final class MySqlFetchTypedRecord
     public ?bool $active;
 }
 
+#[Table('constructor_records')]
+final class MySqlFetchCustomSetterRecord extends Entity
+{
+    public static int $calls = 0;
+
+    public function __set(string $name, mixed $value): void
+    {
+        self::$calls++;
+        parent::__set($name, $value);
+    }
+}
+
 final class MySqlFetchClassTest extends TestCase
 {
     use MySqlDatabase;
@@ -118,5 +130,21 @@ final class MySqlFetchClassTest extends TestCase
         $rows = $db->set(MySqlFetchRecord::class)->asNoTracking()->toArray();
         self::assertSame((string)$raw['bits'], $rows[0]->bits);
         self::assertSame('2026', $rows[0]->manufactured);
+    }
+
+    public function testCustomSetterKeepsFallbackAndIsNotBypassed(): void
+    {
+        $pdo = $this->connection();
+        $pdo->exec('CREATE TABLE constructor_records (id INT PRIMARY KEY, active BOOLEAN)');
+        $pdo->exec('INSERT INTO constructor_records VALUES(1,1),(2,NULL)');
+        MySqlFetchCustomSetterRecord::$calls = 0;
+        $db = new DbContext($pdo);
+        $set = $db->set(MySqlFetchCustomSetterRecord::class);
+        self::assertFalse($db->model->getEntityType(MySqlFetchCustomSetterRecord::class)->pdoFetchClassCompatible);
+        $rows = $set->asNoTracking()->orderBy(Expr::field('id'))->toArray();
+        self::assertSame(4, MySqlFetchCustomSetterRecord::$calls);
+        self::assertSame(1, $rows[0]->id);
+        self::assertTrue($rows[0]->active);
+        self::assertNull($rows[1]->active);
     }
 }

@@ -77,7 +77,13 @@ final readonly class SqlQueryProvider implements IQueryProvider
             return $entities;
         }
         try {
-            $entities = $statement->fetchAll(PDO::FETCH_CLASS, $mapping->class);
+            $class = $mapping->class;
+            $entities = $statement->fetchAll(PDO::FETCH_FUNC, static function (...$values) use ($names, $class): Entity {
+                // Eligibility checks above exclude constructors and custom setters.
+                $entity = new $class();
+                $entity->initializeFromRow(array_combine($names, $values));
+                return $entity;
+            });
             if ($mapping->booleanProperties !== []) {
                 foreach ($entities as $entity) {
                     foreach ($mapping->booleanProperties as $name) {
