@@ -36,6 +36,43 @@ final class DbContextTest extends TestCase
         $this->db = $this->context();
     }
 
+    public function testUpdateAttachesDetachedEntityAndDefersWriteUntilSave(): void
+    {
+        $this->pdo->exec("INSERT INTO users (id, name) VALUES (1, 'Peter')");
+        $user = new User();
+        $user->id = 1;
+        $user->name = 'Mary';
+
+        $entry = $this->db->update($user);
+
+        self::assertSame($user, $entry->entity);
+        self::assertSame(\PhpEntity\EntityState::Modified, $entry->state);
+        self::assertSame($user, $this->db->set(User::class)->find(1));
+        self::assertSame('Peter', $this->pdo->query('SELECT name FROM users WHERE id = 1')->fetchColumn());
+        self::assertSame(1, $this->db->saveChanges());
+        self::assertSame('Mary', $this->pdo->query('SELECT name FROM users WHERE id = 1')->fetchColumn());
+        self::assertSame(\PhpEntity\EntityState::Unchanged, $entry->state);
+        self::assertSame(0, $this->db->saveChanges());
+    }
+
+    public function testUpdateRequiresAnExistingKey(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->db->update(new User());
+    }
+
+    public function testUpdateRejectsAnotherInstanceWithTheSameTrackedKey(): void
+    {
+        $this->pdo->exec("INSERT INTO users (id, name) VALUES (1, 'Peter')");
+        $this->db->set(User::class)->find(1);
+        $user = new User();
+        $user->id = 1;
+        $user->name = 'Mary';
+
+        $this->expectException(LogicException::class);
+        $this->db->update($user);
+    }
+
     public function testInsertIsDeferredAndGeneratedIdIsAssigned(): void
     {
         $user = new User();
@@ -46,6 +83,18 @@ final class DbContextTest extends TestCase
         self::assertSame(1, $this->db->saveChanges());
         self::assertSame(1, $user->id);
         self::assertSame(0, $this->db->saveChanges());
+    }
+
+    public function testArrayWhereComposesWithExistingExpressions(): void
+    {
+        $this->pdo->exec("INSERT INTO users (id, name) VALUES (1, 'Peter'), (2, 'Mary'), (3, 'Paul')");
+        $users = $this->db->set(User::class)
+            ->where(['_or' => [['name' => 'Peter'], ['name' => 'Mary']]])
+            ->where(Expr::gte(Expr::field('id'), 2))
+            ->toArray();
+
+        self::assertCount(1, $users);
+        self::assertSame('Mary', $users[0]->name);
     }
 
     public function testAddRangeDefersInsertsUntilSaveChanges(): void

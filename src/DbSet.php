@@ -21,6 +21,16 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         private ?QueryTrackingBehavior $trackingBehavior = null,
     ) {}
 
+    /** Start a composable SQL query on an unfiltered entity set. */
+    public function fromSqlRaw(string $sql, array $parameters = []): self
+    {
+        if (!$this->root || !$this->query->expression() instanceof \PhpLinq\Expression\SourceExpression) {
+            throw new \LogicException('fromSqlRaw() requires the root DbSet; apply it before query operators.');
+        }
+        $query = new Queryable($this->query->provider(), new \PhpEntity\Sql\RawSqlSourceExpression($sql, $parameters));
+        return new self($this->context, $this->mapping, $query, false, $this->includes, trackingBehavior: $this->trackingBehavior);
+    }
+
     /** Eager-load a relationship or a dotted path when entities are materialized. */
     public function include(string $path): self
     {
@@ -41,8 +51,9 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->withTracking(QueryTrackingBehavior::TrackAll);
     }
 
-    public function where(ValueExpression $predicate): self
+    public function where(ValueExpression|array $predicate): self
     {
+        if (is_array($predicate)) { $predicate = WhereFilter::parse($predicate); }
         return $this->with($this->query->where($predicate));
     }
 

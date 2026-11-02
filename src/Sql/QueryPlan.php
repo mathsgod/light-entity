@@ -15,6 +15,7 @@ final class QueryPlan
     public array $orderings = [];
 
     public ?self $sourcePlan = null;
+    public ?RawSqlSourceExpression $rawSource = null;
     public ?self $innerPlan = null;
     public ?ValueExpression $joinCondition = null;
     public string $joinType = 'INNER';

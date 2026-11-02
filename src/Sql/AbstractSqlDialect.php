@@ -26,8 +26,8 @@ abstract class AbstractSqlDialect implements SqlDialect
         $resultMode = match ($terminal) {
             'count' => 'count',
             'any' => 'any',
-            'first' => $query->selection instanceof FieldExpression ? 'first-scalar' : 'first-row',
-            default => $query->selection instanceof FieldExpression ? 'scalar-list' : 'rows',
+            'first' => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression ? 'first-scalar' : 'first-row',
+            default => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression ? 'scalar-list' : 'rows',
         };
 
         if ($terminal === 'first') {
@@ -77,7 +77,8 @@ abstract class AbstractSqlDialect implements SqlDialect
         $selection = $this->selection($query->selection);
 
         $from = $query->sourcePlan === null
-            ? $this->quoteIdentifier($query->table)
+            ? ($query->rawSource === null ? $this->quoteIdentifier($query->table)
+                : '('.(new RawSqlParser())->compile($query->rawSource, $this->parameter(...), $this)."\n) AS ".$this->quoteIdentifier('__raw_source'))
             : '('.$this->derivedSequence($query->sourcePlan).') AS '.$this->quoteIdentifier(
                 $query->innerPlan === null ? '__linq_result' : 'outer',
             );
@@ -131,8 +132,8 @@ abstract class AbstractSqlDialect implements SqlDialect
         if ($selection === null) {
             return '*';
         }
-        if ($selection instanceof FieldExpression) {
-            return $this->quoteIdentifier($selection->path)
+        if ($selection instanceof FieldExpression || $selection instanceof FunctionExpression) {
+            return $this->value($selection)
                 .' AS '.$this->quoteIdentifier('__linq_value');
         }
         if ($selection instanceof ProjectionExpression) {
@@ -161,7 +162,10 @@ abstract class AbstractSqlDialect implements SqlDialect
 
         return match (true) {
             $expression instanceof FieldExpression => $this->quoteIdentifier($expression->path),
+            $expression instanceof NotExpression => '(NOT '.$this->value($expression->operand).')',
             $expression instanceof ConstantExpression => $this->parameter($expression->value),
+            $expression instanceof FunctionExpression => $this->functionName($expression->definition)
+                .'('.implode(', ', array_map($this->value(...), $expression->arguments)).')',
             $expression instanceof BinaryExpression => '('.$this->value($expression->left).' '
                 .$expression->operator.' '.$this->value($expression->right).')',
             $expression instanceof LogicalExpression => '('.$this->value($expression->left).' '
@@ -173,10 +177,21 @@ abstract class AbstractSqlDialect implements SqlDialect
         };
     }
 
+    /** Dialects can restrict or customize scalar function naming. */
+    protected function functionName(SqlFunctionDefinition $function): string
+    {
+        return $this->quoteIdentifier(($function->schema === null ? '' : $function->schema.'.').$function->name);
+    }
+
+    protected function parameterSql(string $placeholder, mixed $value): string
+    {
+        return $placeholder;
+    }
+
     private function parameter(mixed $value): string
     {
         $name = 'p'.$this->parameterIndex++;
         $this->parameters[$name] = $value;
-        return ':'.$name;
+        return $this->parameterSql(':'.$name, $value);
     }
 }

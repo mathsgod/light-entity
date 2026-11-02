@@ -489,6 +489,26 @@ cache lifetime, pagination, explicit FK mappings, and limitations.
 
 ## Entity entries and save interceptors
 
+`DbSet::where()` also supports GraphQL-compatible array filters with `_and`,
+`_or`, `_not`, comparison operators, and scalar equality shorthand.
+See [Array filters](docs/array-filters.md) for examples and semantics.
+
+Update an entity with an existing primary key without querying it first:
+
+```php
+$user = new User();
+$user->id = $userDto->id;
+$user->name = $userDto->name;
+$db->update($user);
+$db->saveChanges();
+```
+
+`update()` returns an `EntityEntry` and marks the entity `Modified`. The write is
+deferred until `saveChanges()` and includes all writable non-key mapped columns,
+so supply their intended values. A complete primary key is required (including
+every component of a composite key); a missing key is rejected rather than
+inserting a new entity. Another tracked instance with the same key is rejected.
+
 Use EF Core-style entry names to inspect tracking state and snapshots:
 
 ```php
@@ -533,3 +553,43 @@ explicit `add()`, `remove()`, or entry state assignments still opt into writes.
 Changing the default does not detach previously tracked entities.
 See [Query Tracking](docs/query-tracking.md) for cache behavior, explicit attachment,
 identity semantics, and performance considerations.
+
+## Scalar SQL functions
+
+Call an installed database function directly as a LINQ value expression:
+
+```php
+$score = $db->function('GetCustomScore', Expr::field('user_id'));
+
+$topUsers = $db->set(User::class)
+    ->where(Expr::gt($score, 80))
+    ->orderByDescending($score)
+    ->toArray();
+```
+
+An optional `schema` qualifier is supported where the database allows it. Function
+calls execute in SQL and accept expressions or bound scalar/null arguments.
+Scalar and named projections, nested calls, and join keys are supported. Function
+registration is optional; use `registerFunction()` for a shared schema or early
+argument-count validation. Mappings are context-scoped and do not create the database function.
+See [Scalar SQL Functions](docs/sql-functions.md) for wrappers, parameter types,
+dialect differences, and limitations.
+
+## Composable raw SQL
+
+Start a query from an application-supplied SELECT and compose normal operators:
+
+```php
+$blogs = $db->set(Blog::class)
+    ->fromSqlRaw('SELECT * FROM blogs WHERE owner_id = ?', [$ownerId])
+    ->orderBy(Expr::field('name'))
+    ->take(10)
+    ->toArray();
+```
+
+The SELECT becomes a derived-table source. Positional and named parameter binding,
+projections, aggregates, joins, includes, and tracking options are supported.
+Entity results require every mapped column. Apply `fromSqlRaw()` on the root set;
+raw SQL queries do not support root `find()` identity shortcuts. Stored procedures,
+CTE starts, statement separators, and SELECT INTO are not supported in this version.
+See [Composable Raw SQL](docs/from-sql-raw.md) for examples and dialect limitations.

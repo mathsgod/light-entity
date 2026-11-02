@@ -32,17 +32,21 @@ final readonly class SqlQueryCompiler
             array_unshift($operations, $expression);
             $expression = $expression->source;
         }
-        if (!$expression instanceof SourceExpression) {
-            throw new \LogicException('A SQL query must start with a named source.');
+        if ($expression instanceof RawSqlSourceExpression) {
+            $plan = new QueryPlan('__raw_source');
+            $plan->rawSource = $expression;
+        } elseif ($expression instanceof SourceExpression) {
+            $plan = new QueryPlan($expression->name);
+        } else {
+            throw new \LogicException('A SQL query must start with a named or raw SQL source.');
         }
-
-        $plan = new QueryPlan($expression->name);
         $paginationStarted = false;
         $joinedProjection = false;
         foreach ($operations as $operation) {
             if (in_array($operation->method, ['join', 'leftJoin'], true)) {
                 $inner = $this->plan($operation->arguments['inner']);
-                if ($plan->selection instanceof FieldExpression || $inner->selection instanceof FieldExpression) {
+                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
+                    || $inner->selection instanceof FieldExpression || $inner->selection instanceof FunctionExpression) {
                     throw new \LogicException('Join sources must return rows; use a named projection instead of a scalar selection.');
                 }
                 $joined = new QueryPlan('__linq_outer');
@@ -60,7 +64,7 @@ final readonly class SqlQueryCompiler
             }
             // Subsequent operators address the projected JOIN result, not its sources.
             if ($joinedProjection && in_array($operation->method, ['where', 'orderBy', 'select'], true)) {
-                if ($plan->selection instanceof FieldExpression) {
+                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression) {
                     throw new \LogicException('Use a named JOIN projection before composing field-based operators.');
                 }
                 $wrapped = new QueryPlan('__linq_result');
@@ -113,6 +117,10 @@ final readonly class SqlQueryCompiler
         return match (true) {
             $expression instanceof FieldExpression => new FieldExpression($alias.'.'.$expression->path),
             $expression instanceof ConstantExpression => $expression,
+            $expression instanceof FunctionExpression => new FunctionExpression(
+                $expression->definition,
+                array_map(fn ($argument) => $this->qualify($argument, $alias), $expression->arguments),
+            ),
             $expression instanceof BinaryExpression => new BinaryExpression(
                 $this->qualify($expression->left, $alias),
                 $expression->operator,

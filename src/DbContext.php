@@ -15,6 +15,7 @@ class DbContext
     public readonly ChangeTracker $changeTracker;
     private SaveChangesExecutor $saveExecutor;
     private SqlQueryProvider $provider;
+    private SqlFunctionRegistry $functions;
     private RelationshipResolver $relationships;
     private IncludeLoader $includeLoader;
 
@@ -28,6 +29,7 @@ class DbContext
         };
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->database = new DatabaseFacade($pdo);
+        $this->functions = new SqlFunctionRegistry();
         $this->changeTracker = new ChangeTracker($this);
         $this->model = new Model(new \PhpEntity\Schema\SchemaReader($pdo), $mappings);
         $this->provider = new SqlQueryProvider($pdo, $dialect);
@@ -42,6 +44,16 @@ class DbContext
     {
         $mapping = $this->model->getEntityType($class, $table);
         return new DbSet($this, $mapping, Queryable::from($this->provider, $mapping->table));
+    }
+
+    public function registerFunction(string $name, ?string $schema = null, ?int $parameterCount = null): void
+    {
+        $this->functions->register($name, $schema, $parameterCount);
+    }
+
+    public function function(string $name, \PhpLinq\Expression\ValueExpression|int|float|string|bool|null ...$arguments): \PhpEntity\Sql\FunctionExpression
+    {
+        return $this->functions->call($name, ...$arguments);
     }
 
     /** Override a getter using an exact target table and FK column(s). */
@@ -104,6 +116,14 @@ class DbContext
         return $this->changeTracker->entry($mapping, $entity);
     }
 
+    /** Marks all writable non-key properties for update on saveChanges(); requires a complete key. */
+    public function update(object $entity): EntityEntry
+    {
+        $entry = $this->entry($entity);
+        $entry->state = EntityState::Modified;
+        return $entry;
+    }
+
     public function addInterceptors(SaveChangesInterceptor ...$interceptors): void
     {
         $this->saveExecutor->addInterceptors(...$interceptors);
@@ -137,7 +157,10 @@ class DbContext
             if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
             return $entity;
         }
-        if (($entity = $this->tracked($mapping, $mapping->keyValues($row))) !== null) { return $entity; }
+        if (($entity = $this->tracked($mapping, $mapping->keyValues($row))) !== null) {
+            $mapping->validateRow($row);
+            return $entity;
+        }
         $entity = $mapping->hydrate($row);
         $this->changeTracker->setState($mapping, $entity, EntityState::Unchanged);
         return $entity;

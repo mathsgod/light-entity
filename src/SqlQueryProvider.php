@@ -29,7 +29,17 @@ final readonly class SqlQueryProvider implements IQueryProvider
     {
         $query = $this->compile($expression);
         $statement = $this->pdo->prepare($query->sql);
-        $statement->execute($query->parameters);
+        foreach ($query->parameters as $name => $value) {
+            $type = match (true) {
+                $value === null => PDO::PARAM_NULL,
+                is_bool($value) => PDO::PARAM_BOOL,
+                is_int($value) => PDO::PARAM_INT,
+                is_string($value), is_float($value) => PDO::PARAM_STR,
+                default => throw new \InvalidArgumentException('SQL parameters must be scalar or null.'),
+            };
+            $statement->bindValue(is_int($name) ? $name + 1 : ':'.ltrim($name, ':'), $value, $type);
+        }
+        $statement->execute();
 
         return match ($query->resultMode) {
             'count' => (int) $statement->fetchColumn(),

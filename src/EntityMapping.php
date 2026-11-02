@@ -130,8 +130,19 @@ final readonly class EntityMapping
         return $values;
     }
 
+    /** Entity queries require every mapped column, even when identity tracking reuses an object. */
+    public function validateRow(array $row): void
+    {
+        foreach ($this->properties as $property) {
+            if (!array_key_exists($property, $row)) {
+                throw new \LogicException("Query result is missing mapped column: {$property}");
+            }
+        }
+    }
+
     public function hydrate(array $row): object
     {
+        $this->validateRow($row);
         $entity = (new \ReflectionClass($this->class))->newInstanceWithoutConstructor();
         foreach ($this->properties as $property) {
             $entity->$property = isset($this->columns[$property])
