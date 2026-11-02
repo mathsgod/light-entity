@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PhpEntity\Sql;
 
+use PhpLinq\Expression\AggregateExpression;
 use PhpLinq\Expression\BinaryExpression;
 use PhpLinq\Expression\ConstantExpression;
 use PhpLinq\Expression\FieldExpression;
@@ -26,8 +27,8 @@ abstract class AbstractSqlDialect implements SqlDialect
         $resultMode = match ($terminal) {
             'count' => 'count',
             'any' => 'any',
-            'first' => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression ? 'first-scalar' : 'first-row',
-            default => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression ? 'scalar-list' : 'rows',
+            'first' => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'first-scalar' : 'first-row',
+            default => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar-list' : 'rows',
         };
 
         if ($terminal === 'first') {
@@ -82,7 +83,7 @@ abstract class AbstractSqlDialect implements SqlDialect
             : '('.$this->derivedSequence($query->sourcePlan).') AS '.$this->quoteIdentifier(
                 $query->innerPlan === null ? '__linq_result' : 'outer',
             );
-        $sql = 'SELECT '.$pagination['prefix'].$selection.' FROM '.$from;
+        $sql = 'SELECT '.($query->distinct ? 'DISTINCT ' : '').$pagination['prefix'].$selection.' FROM '.$from;
         if ($query->innerPlan !== null) {
             $sql .= ' '.$query->joinType.' JOIN ('.$this->derivedSequence($query->innerPlan)
                 .') AS '.$this->quoteIdentifier('inner').' ON '.$this->joinValue($query->joinCondition);
@@ -93,6 +94,14 @@ abstract class AbstractSqlDialect implements SqlDialect
             $sql .= ' WHERE '.implode(' AND ', $predicates);
         }
 
+        if ($query->groupKey !== null) {
+            $keys = $query->groupKey instanceof ProjectionExpression
+                ? array_values($query->groupKey->members) : [$query->groupKey];
+            $sql .= ' GROUP BY '.implode(', ', array_map($this->value(...), $keys));
+        }
+        if ($query->havingPredicates !== []) {
+            $sql .= ' HAVING '.implode(' AND ', array_map($this->value(...), $query->havingPredicates));
+        }
         if ($query->orderings !== []) {
             $parts = [];
             foreach ($query->orderings as $ordering) {
@@ -132,7 +141,7 @@ abstract class AbstractSqlDialect implements SqlDialect
         if ($selection === null) {
             return '*';
         }
-        if ($selection instanceof FieldExpression || $selection instanceof FunctionExpression) {
+        if ($selection instanceof FieldExpression || $selection instanceof FunctionExpression || $selection instanceof AggregateExpression) {
             return $this->value($selection)
                 .' AS '.$this->quoteIdentifier('__linq_value');
         }
@@ -161,6 +170,8 @@ abstract class AbstractSqlDialect implements SqlDialect
         }
 
         return match (true) {
+            $expression instanceof AggregateExpression => strtoupper($expression->function).'('.(
+                $expression->operand === null ? '*' : $this->value($expression->operand)).')',
             $expression instanceof FieldExpression => $this->quoteIdentifier($expression->path),
             $expression instanceof NotExpression => '(NOT '.$this->value($expression->operand).')',
             $expression instanceof ConstantExpression => $this->parameter($expression->value),

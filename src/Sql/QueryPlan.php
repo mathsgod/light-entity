@@ -14,6 +14,10 @@ final class QueryPlan
     /** @var list<array{expression: ValueExpression, descending: bool}> */
     public array $orderings = [];
 
+    public ?ValueExpression $groupKey = null;
+    /** @var list<ValueExpression> */
+    public array $havingPredicates = [];
+    public bool $distinct = false;
     public ?self $sourcePlan = null;
     public ?RawSqlSourceExpression $rawSource = null;
     public ?self $innerPlan = null;

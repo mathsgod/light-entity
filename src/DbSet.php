@@ -64,6 +64,14 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     }
 
     /** Returns projected values without tracking them as entities. */
+    public function groupBy(ValueExpression $keySelector): Queryable
+    {
+        return $this->query->groupBy($keySelector);
+    }
+    public function distinct(): Queryable
+    {
+        return $this->query->distinct();
+    }
     public function select(ValueExpression $selector): Queryable
     {
         return $this->query->select($selector);

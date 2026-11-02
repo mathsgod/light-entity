@@ -614,3 +614,40 @@ Entity results require every mapped column. Apply `fromSqlRaw()` on the root set
 raw SQL queries do not support root `find()` identity shortcuts. Stored procedures,
 CTE starts, statement separators, and SELECT INTO are not supported in this version.
 See [Composable Raw SQL](docs/from-sql-raw.md) for examples and dialect limitations.
+
+### Grouping, aggregates and distinct values
+
+```php
+use PhpLinq\Expr;
+
+$totals = $orders
+    ->groupBy(Expr::field('CustomerId'))
+    ->where(Expr::gte(Expr::count(), 5))
+    ->select(Expr::projection([
+        'CustomerId' => Expr::key(),
+        'OrderCount' => Expr::count(),
+        'TotalAmount' => Expr::sum(Expr::field('Amount')),
+    ]))
+    ->toArray();
+
+$countries = $customers->select(Expr::field('Country'))->distinct()->toArray();
+```
+
+Use `Expr::fields('Country', 'City')` as a composite grouping key and
+`Expr::key('Country')` to reference a key member. Aggregates include `count()`,
+`sum($field)`, `avg($field)`, `min($field)` and `max($field)`.
+`Expr::count()` counts rows; `Expr::count($field)` counts non-null values.
+Other aggregates ignore null values and return null when all values are null.
+The terminal query method `->count()` counts the resulting groups or distinct rows.
+`distinct()` compares the complete selected value or row. Pagination and distinct
+operations are applied in their specified order; SQL results need an explicit
+`orderBy()` when deterministic ordering is required.
+
+The SQL provider translates predicates before grouping to `WHERE` and predicates
+on groups to `HAVING`. A named aggregate projection followed by `where()` uses a
+derived table, where projection aliases are ordinary columns. Grouped projections
+must use `Expr::key()` and aggregates rather than ungrouped fields. Full grouping
+objects and nested aggregates are rejected explicitly. Composing field-based
+operators after a scalar projection requires a named projection instead.
+`DbSet::groupBy()` and `DbSet::distinct()` return raw `Queryable` results;
+these results do not enter entity tracking.
