@@ -1,0 +1,74 @@
+--- a/src/DbContext.php
++++ b/src/DbContext.php
+@@ -175,9 +175,7 @@
+-        $entities = $this->provider->executeNoTrackingEntities($query->expression(), $mapping);
+-        if ($entities === null) {
+-            return null;
+-        }
+-        foreach ($entities as $entity) {
+-            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking); }
+-            if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
+-        }
+-        return $entities;
++        return $this->provider->executeNoTrackingEntities(
++            $query->expression(), $mapping,
++            function (Entity $entity) use ($mapping): void {
++                $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking);
++                if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
++            },
++        );
+--- a/src/SqlQueryProvider.php
++++ b/src/SqlQueryProvider.php
+@@ -43,2 +43,5 @@
+-    /** @return list<object>|null null selects the existing hydration path. @internal */
+-    public function executeNoTrackingEntities(Expression $expression, EntityMapping $mapping): ?array
++    /**
++     * @param null|callable(Entity): void $attachEntity Attach context to each created entity.
++     * @return list<object>|null null selects the existing hydration path. @internal
++     */
++    public function executeNoTrackingEntities(Expression $expression, EntityMapping $mapping, ?callable $attachEntity = null): ?array
+@@ -75 +78,3 @@
+-                $entities[] = $mapping->hydrate($row);
++                $entity = $mapping->hydrate($row);
++                if ($attachEntity !== null) { $attachEntity($entity); }
++                $entities[] = $entity;
+@@ -81 +86 @@
+-            $entities = $statement->fetchAll(PDO::FETCH_FUNC, static function (...$values) use ($names, $class): Entity {
++            $entities = $statement->fetchAll(PDO::FETCH_FUNC, static function (...$values) use ($names, $class, $attachEntity): Entity {
+@@ -84,0 +90 @@
++                if ($attachEntity !== null) { $attachEntity($entity); }
+--- a/tests/integration/MySqlFetchClassTest.php
++++ b/tests/integration/MySqlFetchClassTest.php
+@@ -149,0 +150,32 @@
++
++    public function testAttachmentCallbackRunsOnceForNativeAndSubsetMappings(): void
++    {
++        $pdo = $this->connection();
++        $pdo->exec('CREATE TABLE fetch_records (id INT PRIMARY KEY, active BOOLEAN)');
++        $pdo->exec('INSERT INTO fetch_records VALUES(1,1),(2,NULL)');
++        $db = new DbContext($pdo);
++        $set = $db->set(MySqlFetchRecord::class)->orderBy(Expr::field('id'));
++        $mapping = $db->model->getEntityType(MySqlFetchRecord::class);
++        $query = $set->asQueryable();
++        $provider = $query->provider();
++        $attached = [];
++        $rows = $provider->executeNoTrackingEntities($query->expression(), $mapping,
++            static function (Entity $entity) use (&$attached): void { $attached[] = $entity; });
++        self::assertCount(2, $attached);
++        self::assertSame($rows, $attached);
++        self::assertTrue($rows[0]->active);
++        self::assertNull($rows[1]->active);
++
++        // A partial explicit mapping uses associative hydration inside the provider.
++        // It must invoke the callback too, since DbContext no longer loops afterwards.
++        $subset = new \PhpEntity\EntityMapping(MySqlFetchRecord::class, 'fetch_records', ['id'],
++            generatedKey: false, columns: ['id' => $mapping->columns['id']]);
++        $attached = [];
++        $rows = $provider->executeNoTrackingEntities($query->expression(), $subset,
++            static function (Entity $entity) use (&$attached): void { $attached[] = $entity; });
++        self::assertCount(2, $attached);
++        self::assertSame($rows, $attached);
++        self::assertSame(1, $rows[0]->id);
++        self::assertSame(2, $rows[1]->id);
++        self::assertFalse($rows[0]->hasValue('active'));
++    }

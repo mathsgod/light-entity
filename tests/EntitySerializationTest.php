@@ -26,8 +26,77 @@ final class SerializationEntity extends SerializationParent
 
 final class DynamicSerializationEntity extends Entity {}
 
+#[\AllowDynamicProperties]
+class AllowedSerializationParent extends Entity {}
+
+final class AllowedSerializationEntity extends AllowedSerializationParent {}
+
+#[\AllowDynamicProperties]
+final class CustomSetterSerializationEntity extends Entity
+{
+    public function __set(string $name, mixed $value): void
+    {
+        $this->$name = $value;
+    }
+}
+
 final class EntitySerializationTest extends TestCase
 {
+    public function testCachedPropertiesKeepInitializationAndValuesPerInstance(): void
+    {
+        $first = new SerializationEntity();
+        $first->id = 1;
+        $first->uninitialized = 'first';
+        self::assertSame('first', $first->jsonSerialize()['uninitialized']);
+        $second = new SerializationEntity();
+        self::assertArrayNotHasKey('id', $second->jsonSerialize());
+        self::assertArrayNotHasKey('uninitialized', $second->jsonSerialize());
+        $second->id = 2;
+        $second->uninitialized = 'second';
+        self::assertSame(2, $second->jsonSerialize()['id']);
+        self::assertSame('second', $second->jsonSerialize()['uninitialized']);
+        unset($second->id);
+        self::assertArrayNotHasKey('id', $second->jsonSerialize());
+        self::assertSame(1, $first->jsonSerialize()['id']);
+        self::assertSame('first', $first->jsonSerialize()['uninitialized']);
+    }
+
+    public function testCustomSettersKeepInstanceSpecificDynamicProperties(): void
+    {
+        $first = new CustomSetterSerializationEntity();
+        $first->first = 1;
+        self::assertSame(['first' => 1], $first->jsonSerialize());
+        $second = new CustomSetterSerializationEntity();
+        $second->second = null;
+        self::assertSame(['second' => null], $second->jsonSerialize());
+        $first->third = true;
+        self::assertSame(['first' => 1, 'third' => true], $first->jsonSerialize());
+    }
+
+    public function testInheritedAllowDynamicPropertiesKeepsUnserializedPublicValues(): void
+    {
+        $class = AllowedSerializationEntity::class;
+        $entity = unserialize('O:'.strlen($class).':"'.$class.'":1:{s:5:"extra";s:5:"value";}',
+            ['allowed_classes' => [$class]]);
+        self::assertInstanceOf(AllowedSerializationEntity::class, $entity);
+        self::assertSame(['extra' => 'value'], $entity->jsonSerialize());
+    }
+
+    public function testPropertyHooksKeepRawValuesAndExcludeVirtualProperties(): void
+    {
+        if (PHP_VERSION_ID < 80400) {
+            self::markTestSkipped('Property hooks require PHP 8.4.');
+        }
+        eval('namespace PhpEntity\\Tests;
+            final class HookedSerializationEntity extends \\PhpEntity\\Entity {
+                public string $name = "raw" { get => strtoupper($this->name); }
+                public string $computed { get => "virtual"; }
+            }');
+        $entity = new HookedSerializationEntity();
+        self::assertSame('RAW', $entity->name);
+        self::assertSame(['name' => 'raw'], $entity->jsonSerialize());
+    }
+
     public function testBulkInitializationPreservesNullTypesAndSubsequentEdits(): void
     {
         $entity = new DynamicSerializationEntity();

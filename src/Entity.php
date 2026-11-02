@@ -45,14 +45,50 @@ abstract class Entity implements \JsonSerializable
 
     public function jsonSerialize(): array
     {
+        /** @var array<class-string, array{properties: list<\ReflectionProperty>, dynamic: bool}> $metadataByClass */
+        static $metadataByClass = [];
+        $metadata = $metadataByClass[static::class] ??= self::serializationMetadata(static::class);
+        if (!$metadata['dynamic'] && $metadata['properties'] === []) {
+            return $this->data;
+        }
         $values = $this->data;
-        // Initialized public properties have unmangled names; private/protected
-        // storage (including relation context) contains NUL bytes in its keys.
-        foreach (get_mangled_object_vars($this) as $name => $value) {
-            if (!str_contains($name, "\0")) {
-                $values[$name] = $value;
+        if ($metadata['dynamic']) {
+            // Custom setters / AllowDynamicProperties can create public properties
+            // that differ per instance, so a class-level list is insufficient.
+            foreach (get_mangled_object_vars($this) as $name => $value) {
+                if (!str_contains((string)$name, "\0")) {
+                    $values[$name] = $value;
+                }
+            }
+            return $values;
+        }
+        foreach ($metadata['properties'] as $property) {
+            if ($property->isInitialized($this)) {
+                // Preserve raw backing values, without invoking PHP 8.4 get hooks.
+                $values[$property->getName()] = PHP_VERSION_ID >= 80400
+                    ? $property->getRawValue($this) : $property->getValue($this);
             }
         }
         return $values;
+    }
+
+    /** @param class-string $class @return array{properties: list<\ReflectionProperty>, dynamic: bool} */
+    private static function serializationMetadata(string $class): array
+    {
+        $reflection = new \ReflectionClass($class);
+        $properties = [];
+        foreach ($reflection->getProperties(\ReflectionProperty::IS_PUBLIC) as $property) {
+            if (!$property->isStatic() && !(PHP_VERSION_ID >= 80400 && $property->isVirtual())) {
+                $properties[] = $property;
+            }
+        }
+        $dynamic = $reflection->getMethod('__set')->getDeclaringClass()->getName() !== self::class;
+        for ($type = $reflection; $type !== false; $type = $type->getParentClass()) {
+            if ($type->getAttributes(\AllowDynamicProperties::class) !== []) {
+                $dynamic = true;
+                break;
+            }
+        }
+        return ['properties' => $properties, 'dynamic' => $dynamic];
     }
 }

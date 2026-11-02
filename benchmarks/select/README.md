@@ -9,7 +9,7 @@ cd benchmarks/select
 ./run.sh 15 100000  # 15 rounds，100,000 records
 ```
 
-需要 Docker Compose、Composer、PHP >= 8.2、pdo_mysql。預設使用本機 port 33388，請先確保未被佔用。依賴安裝在本目錄，不改動主專案的 Composer 依賴。`composer.lock` 固定 Laminas 版本；php-entity/php-linq/light-db 是本地目錄 symlink，使用目前工作目錄的程式。light-db 路徑為 `../../../../light/light-db`（相對本目錄）；在其他目錄結構執行時，需調整 composer.json 的 path repository 並重新 composer update。
+需要 Docker Compose、Composer、PHP >= 8.3、pdo_mysql。預設使用本機 port 33388，請先確保未被佔用。依賴安裝在本目錄，不改動主專案的 Composer 依賴。`composer.lock` 固定 Laminas 版本；php-entity/php-linq/light-db 是本地目錄 symlink，使用目前工作目錄的程式。light-db 路徑為 `../../../../light/light-db`（相對本目錄）；在其他目錄結構執行時，需調整 composer.json 的 path repository 並重新 composer update。
 
 三者執行無條件 `SELECT * FROM select_records`，讀取全部欄位並完整 materialize 所有資料。筆數可透過第二個參數或 `BENCH_ROWS` 環境變數指定，預設 10,000；驗證筆數及 ID 總和亦按指定數量計算。表有 INT 主鍵、name、email、age、DECIMAL balance、DATETIME created_at 和 128 字元 payload。Laminas 使用 Sql builder、prepared statement、陣列結果；php-entity 使用 `set(SelectRecord::class)->asNoTracking()->toArray()`，回傳 Entity；light-db 使用 `LightSelectRecord::Query()->toArray()`，回傳 Model，透過 `SetAdapter()` 注入同樣設定的 PDO，略過 `.env`／persistent connection factory。目前測試會再產生完整 JSON：Laminas 陣列直接 json_encode；light-db 透過原有 JsonSerializable（包含其 jsonSerialize 內的 metadata/JSON 處理）；php-entity 透過 Entity 的 JsonSerializable 匯出內部資料及已初始化的 public properties，再 json_encode。早期測試使用手動逐欄匯出，保留於下方歷史紀錄。計時涵蓋 Entity/Model hydration、輸出資料準備及 JSON 編碼，直到回應字串完整產生；不包含 HTTP 傳輸、壓縮或瀏覽器解析。先前歷史測試只計 SELECT/materialization，不能與目前總時間直接比較。
 
@@ -213,3 +213,60 @@ Entity 新增內部 initializeFromRow(array) 方法；相容 MySQL NoTracking ta
 驗證：269 項一般測試、254 assertions（162 項因缺少 SQLite 跳過）；66 項 MySQL 整合測試、448 assertions 全數通過。新增 bulk 初始化 NULL/型別/後續修改測試，以及 custom setter fallback 確認。所有測試容器已清理。
 
 重跑三者：`./run.sh 15 10000`；重跑 A/B：`python3 compare-fetch-func.py 30`。完整樣本：`results-json-fetch-func-production-10000.json`、`results-entity-fetch-func-production-10000.json`。
+
+
+## 將 relation attachment 移入 FETCH_FUNC 的實驗
+
+此實驗沒有帶來可確認的效能改善，正式 src 保留原有 fetch 完成後逐筆 attach 的實作。原型及新增 regression test 保存於 `inline-attach.patch`；runner 只在暫存目錄套用 patch，對照 commit `50eb97e` 的 provider/context，工作目錄中的正式程式不會修改。
+
+```bash
+python3 compare-inline-attach.py 60
+```
+
+需要 Python 3、git、patch、Docker Compose 與本目錄 Composer dependencies。兩種做法均使用 FETCH_FUNC；prototype 由 DbContext 傳入 attachment callback，在每列 native hydration 內呼叫，亦涵蓋 partial mapping 的 associative fallback。每個 Entity 仍執行一次 attachRelations；省去的是第二次遍歷，但新增每列 callback 呼叫。boolean 轉換及 DynamicEntity mapping 登記保持相同。
+
+10,000 筆 SELECT → JSON，60 輪交錯 A/B，共 240 個獨立 process，所有 JSON 完全一致。
+
+| Mode | Variant | Total median ms | SELECT/materialization ms | JSON ms | Peak +MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| cold | post-fetch-loop | 38.948 | 26.598 | 12.090 | 14.919 |
+| cold | inline-attach | 39.823 | 27.631 | 12.074 | 14.919 |
+| warm | post-fetch-loop | 30.552 | 20.025 | 10.468 | 14.627 |
+| warm | inline-attach | 31.038 | 20.508 | 10.491 | 14.627 |
+
+本次暖查詢 inline 版本的中位數多 0.486 ms（1.59%），RAM 相同。配對 bootstrap 分析以「baseline − inline」表示省下的時間，暖查詢 median paired delta 為 −0.599 ms，95% interval 約 [−0.966, +0.275] ms，涵蓋零，未能證明有穩定收益。新增 callback 的成本可能抵消省掉遍歷的好處，尚未逐項 profiling。
+
+原型驗證：一般測試 269 項、254 assertions（162 項缺 SQLite 而跳過）；MySQL 67 項、459 assertions 全數通過，包括 native 與 partial mapping 的 callback 恰好各執行一次及既有關聯 getter。測完已回復正式 src，新增測試一併留在 patch 中。完整樣本：`results-inline-attach-10000.json`。所有測試容器已清理。
+
+
+## 快取 Entity JSON public-property metadata
+
+每個 Entity 類別只發現一次可序列化的 public properties，快取 ReflectionProperty 清單。一般類別沒有 public properties 時直接回傳內部 data，不再逐個 Entity 呼叫 get_mangled_object_vars。有 public properties 時逐筆確認 isInitialized，只合併目前實例的值，public 優先；NULL、unset、未初始化欄位及繼承欄位行為保留。PHP 8.4+ 使用 raw backing value 並排除 virtual properties，避免新增 getter hook 呼叫。
+
+自訂 __set 或繼承 AllowDynamicProperties 的類別可能有每筆不同的真正 dynamic public properties，故保留 per-instance 掃描 fallback。cache 只保存屬性 metadata，不保存任何實例值或初始化狀態。
+
+10,000 筆 SELECT → JSON，15 輪三者比較：
+
+| Library | Mode | Total median ms | P95 ms | Retained MiB | Peak +MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| laminas | cold | 31.658 | 36.051 | 10.366 | 10.366 |
+| php-entity | cold | 36.886 | 43.272 | 11.334 | 11.334 |
+| light-db | cold | 78.549 | 91.175 | 17.710 | 17.711 |
+| laminas | warm | 24.720 | 26.523 | 9.820 | 9.820 |
+| php-entity | warm | 27.697 | 36.186 | 11.041 | 11.041 |
+| light-db | warm | 54.042 | 57.863 | 15.558 | 15.559 |
+
+30 輪交錯 A/B，只替換 Entity 類別；provider、context、FETCH_FUNC、資料及 JSON 編碼設定相同。baseline Entity 取自 commit 50eb97e：
+
+| Mode | Variant | Total median ms | SELECT/materialization ms | JSON ms | Retained MiB | Peak +MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| cold | per-object-scan | 38.510 | 26.493 | 11.794 | 14.918 | 14.919 |
+| cold | cached-properties | 36.656 | 26.931 | 9.899 | 11.334 | 11.334 |
+| warm | per-object-scan | 30.232 | 19.920 | 10.138 | 14.627 | 14.627 |
+| warm | cached-properties | 27.291 | 19.462 | 7.908 | 11.041 | 11.041 |
+
+暖查詢總時間減少 9.73%，PHP peak 增量減少 24.52%。本效能資料的 Entity 沒有 public properties，測到的是直接回傳 data 的快速路徑；有 public properties 的正確性已測試，這組數字不代表該路徑有相同加速比例。兩組合共 210 次 JSON 逐 byte 一致。
+
+驗證：一般測試 273 項、269 assertions（162 項因缺少 SQLite 跳過）；MySQL 整合測試 66 項、448 assertions 全數通過。新增跨實例／unset 狀態、custom setter dynamic properties、繼承 AllowDynamicProperties、property hooks raw/virtual 值測試。所有容器已清理。
+
+重跑三者：`./run.sh 15 10000`；重跑 A/B：`python3 compare-json-cache.py 30`。完整樣本：`results-json-cached-properties-10000.json`、`results-json-metadata-cache-10000.json`。

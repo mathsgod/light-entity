@@ -1,6 +1,6 @@
 # php-entity
 
-An experimental PHP 8.2+ database-first ORM built on PDO and `mathsgod/php-linq`. Independent of light-db and Laminas DB.
+An experimental PHP 8.3+ database-first ORM built on PDO and `mathsgod/php-linq`. Independent of light-db and Laminas DB.
 
 ## Runtime automatic mapping
 
@@ -75,6 +75,10 @@ Public properties override same-named internal values. Uninitialized typed
 properties, static properties, protected/private members, and relation context
 are excluded. Custom initialized public properties are included even when they
 are not mapped database columns. JSON database columns remain strings as above.
+The initialized values are read per instance, while the public-property list is
+cached per entity class. Ordinary entities with no public properties return their
+internal data directly. Classes with custom setters or `AllowDynamicProperties`
+retain a per-instance scan so dynamically created public properties are included.
 
 `DbSet` supports `include`, `where`, `orderBy`, `orderByDescending`, `skip`, `take`, `first`, `find`, `any`, `count`, `toArray`, and iteration. `first()` throws `UnderflowException` when empty. Root `find()` checks the identity map before querying and returns null when missing.
 
@@ -117,6 +121,8 @@ value is combined with the other components to reload the inserted row, and is
 assigned to the entity only after a successful save.
 
 ## Setup and tests
+
+The test suite uses PHPUnit 12.5 and requires PHP 8.3 or later.
 
 Keep this repository alongside `php-linq` and run `composer install`. The path repository in `composer.json` is for local development; consuming applications must configure their own path repository until a suitable php-linq release is available.
 

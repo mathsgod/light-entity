@@ -2,7 +2,7 @@
   "name": "php-entity/select-benchmark",
   "private": true,
   "require": {
-    "php": ">=8.2",
+    "php": ">=8.3",
     "laminas/laminas-db": "^2.20",
     "mathsgod/php-entity": "@dev",
     "mathsgod/php-linq": "@dev",

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ff21f814a2428cfa127a810df373135e",
+    "content-hash": "57b3f481e9cd1fcbb1f49c4dbf7d9c7c",
     "packages": [
         {
             "name": "graham-campbell/result-type",
@@ -546,15 +546,15 @@
             "dist": {
                 "type": "path",
                 "url": "../..",
-                "reference": "a64b27e9675569b84e3b2d2cdecb9276646f9ed9"
+                "reference": "50eb97e133e81cba29c81b3abcb83abb19868d22"
             },
             "require": {
                 "ext-pdo": "*",
                 "mathsgod/php-linq": "@dev",
-                "php": ">=8.2"
+                "php": ">=8.3"
             },
             "require-dev": {
-                "phpunit/phpunit": "^11.5"
+                "phpunit/phpunit": "^12.5"
             },
             "type": "library",
             "autoload": {
@@ -1384,7 +1384,7 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": ">=8.2"
+        "php": ">=8.3"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"
