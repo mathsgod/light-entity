@@ -32,7 +32,7 @@ final readonly class SqlQueryCompiler
     private function plan(Expression $expression): QueryPlan
     {
         if ($expression instanceof MethodCallExpression
-            && in_array($expression->method, ['firstOrDefault', 'single', 'all', 'contains'], true)) {
+            && in_array($expression->method, ['firstOrDefault', 'single', 'all', 'contains', 'sum', 'average', 'min', 'max'], true)) {
             return $this->terminalPlan($expression);
         }
         $operations = [];
@@ -167,7 +167,17 @@ final readonly class SqlQueryCompiler
         $plan = $this->plan($expression->source);
         $method = $expression->method;
         $predicate = $expression->arguments['predicate'] ?? null;
-        if ($method === 'contains') {
+        if (in_array($method, ['sum', 'average', 'min', 'max'], true)) {
+            if ($plan->selection !== null && !$plan->selection instanceof ProjectionExpression) {
+                throw new \LogicException('Use a named projection before a terminal aggregate.');
+            }
+            $selector = $expression->arguments['selector'];
+            $this->validateValue($selector, false);
+            if ($selector instanceof ProjectionExpression) {
+                throw new \LogicException('Terminal aggregates require a scalar selector.');
+            }
+            $plan->aggregateSelector = $selector;
+        } elseif ($method === 'contains') {
             if (!$plan->selection instanceof FieldExpression && !$plan->selection instanceof FunctionExpression
                 && !$plan->selection instanceof AggregateExpression) {
                 throw new \LogicException('contains() requires a scalar projection.');

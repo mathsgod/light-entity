@@ -30,6 +30,7 @@ final class QueryPlan
     public string $terminal = 'sequence';
     public ?ValueExpression $terminalPredicate = null;
     public mixed $defaultValue = null;
+    public ?ValueExpression $aggregateSelector = null;
 
     public function __construct(public readonly string $table)
     {

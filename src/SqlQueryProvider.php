@@ -31,6 +31,8 @@ final readonly class SqlQueryProvider implements IQueryProvider
         $statement = $this->executeStatement($query);
 
         return match ($query->resultMode) {
+            'sum' => $this->sumResult($statement),
+            'average', 'min', 'max' => $this->aggregateResult($statement, $query->resultMode),
             'count' => (int) $statement->fetchColumn(),
             'boolean' => (bool) $statement->fetchColumn(),
             'firstOrDefault-row', 'firstOrDefault-scalar', 'single-row', 'single-scalar' => $this->terminalResult($statement, $query),
@@ -116,6 +118,35 @@ final readonly class SqlQueryProvider implements IQueryProvider
         $statement->execute();
 
         return $statement;
+    }
+
+    private function aggregateResult(\PDOStatement $statement, string $method): mixed
+    {
+        try {
+            $row = $statement->fetch(PDO::FETCH_NUM);
+            if ($row === false) throw new \UnexpectedValueException('Aggregate query returned no row.');
+            $value = $row[0];
+            if ($method === 'average' && $value !== null && !is_int($value) && !is_float($value)
+                && !(is_string($value) && is_numeric($value))) {
+                throw new \UnexpectedValueException('AVG must return a numeric value or null.');
+            }
+            return $value;
+        } finally {
+            $statement->closeCursor();
+        }
+    }
+
+    private function sumResult(\PDOStatement $statement): int|float|string
+    {
+        try {
+            $value = $statement->fetchColumn();
+            if (!is_int($value) && !is_float($value) && !(is_string($value) && is_numeric($value))) {
+                throw new \UnexpectedValueException('SUM must return a numeric value.');
+            }
+            return $value;
+        } finally {
+            $statement->closeCursor();
+        }
     }
 
     private function terminalResult(\PDOStatement $statement, CompiledQuery $query): mixed

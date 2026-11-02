@@ -24,6 +24,26 @@ abstract class AbstractSqlDialect implements SqlDialect
         $this->parameterIndex = 0;
 
         $terminal = $query->terminal;
+        if (in_array($terminal, ['sum', 'average', 'min', 'max'], true)) {
+            $query = clone $query;
+            if ($query->limit === null && $query->offset === null) $query->orderings = [];
+            $query->terminal = 'sequence';
+            $direct = $query->selection === null && $query->groupKey === null && !$query->distinct
+                && $query->limit === null && $query->offset === null;
+            $source = $direct ? null : $this->compileSequence($query);
+            $operand = $this->value($query->aggregateSelector);
+            // SQL Server AVG(integer) truncates fractional results.
+            if ($terminal === 'average' && $this instanceof SqlServerDialect) {
+                $operand = 'CAST('.$operand.' AS FLOAT)';
+            }
+            $function = $terminal === 'average' ? 'AVG' : strtoupper($terminal);
+            $aggregate = $function.'('.$operand.')';
+            if ($terminal === 'sum') $aggregate = 'COALESCE('.$aggregate.', 0)';
+            $selection = $aggregate.' AS '.$this->quoteIdentifier('__linq_'.$terminal);
+            $sql = $direct ? $this->compileSequence($query, $selection)
+                : 'SELECT '.$selection.' FROM ('.$source.') AS '.$this->quoteIdentifier('__linq_source');
+            return new CompiledQuery($sql, $this->parameters, $terminal);
+        }
         $resultMode = match ($terminal) {
             'count' => 'count',
             'any' => 'any',
@@ -84,10 +104,10 @@ abstract class AbstractSqlDialect implements SqlDialect
     /** @return array{prefix: string, suffix: string} */
     abstract protected function pagination(?int $limit, ?int $offset, bool $hasOrderBy): array;
 
-    private function compileSequence(QueryPlan $query): string
+    private function compileSequence(QueryPlan $query, ?string $selectionOverride = null): string
     {
         $pagination = $this->pagination($query->limit, $query->offset, $query->orderings !== []);
-        $selection = $this->selection($query->selection);
+        $selection = $selectionOverride ?? $this->selection($query->selection);
 
         $from = $query->sourcePlan === null
             ? ($query->rawSource === null ? $this->quoteIdentifier($query->table)

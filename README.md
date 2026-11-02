@@ -686,3 +686,44 @@ and `all()`. Entity results retain tracking and include loading. A DbSet default
 must be an object or null. Use `select(...)->contains(...)` for membership checks.
 Field-based terminal predicates after a projection require a named projection;
 include ordering keys in that projection when preserving order is necessary.
+
+### Terminal sum
+
+```php
+$total = $query
+    ->where(Expr::eq(Expr::field('Status'), 'Paid'))
+    ->sum(Expr::field('Amount'));
+```
+
+`Queryable::sum($selector)` executes immediately and sums the selected values.
+Null values are ignored; empty or all-null results return zero. This terminal
+method differs from `Expr::sum($field)`, which builds a grouped aggregate
+expression. The in-memory provider returns an int or float.
+
+For an entity set, use `$db->Orders->asQueryable()->sum(Expr::field('Amount'))`.
+The SQL provider performs the sum in the database and returns one value. Simple
+queries use `COALESCE(SUM(...), 0)` directly; pagination, distinct rows, and named
+projections use a derived table to preserve the preceding operations. After a
+projection, reference its output aliases in the selector. Scalar projections must
+be replaced with named projections before using `sum($selector)`.
+PDO numeric results are returned unchanged, including decimal strings, to avoid
+losing database decimal precision through float conversion.
+
+### Terminal average, minimum and maximum
+
+```php
+$average = $query->average(Expr::field('Amount'));
+$minimum = $query->min(Expr::field('Amount'));
+$maximum = $query->max(Expr::field('Amount'));
+```
+
+These Queryable operations ignore null values and return null for an empty or
+all-null result. They preserve preceding filters, pagination, distinct rows and
+named projections, just like terminal `sum()`. This nullable behavior follows
+SQL aggregates; it differs from callback-based Enumerable aggregates, whose
+empty-sequence and null behavior follows their existing implementations.
+
+The SQL provider executes `AVG`, `MIN` or `MAX` in the database and returns one
+value. Minimum and maximum retain the PDO value type; averages retain numeric
+strings when returned by the driver. SQL Server uses `AVG(CAST(... AS FLOAT))`
+to avoid integer truncation, so its averages use floating-point precision.
