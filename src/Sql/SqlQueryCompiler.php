@@ -52,6 +52,12 @@ final readonly class SqlQueryCompiler
         $joinedProjection = false;
         $previousMethod = null;
         foreach ($operations as $operation) {
+            if (in_array($operation->method, ['groupJoin', 'zip', 'chunk'], true)) {
+                throw new \LogicException(
+                    "{$operation->method}() is not supported by the SQL provider. "
+                    .'Call asEnumerable() before this operation to execute it in PHP.',
+                );
+            }
             if ($operation->method === 'thenBy' && !in_array($previousMethod, ['orderBy', 'thenBy'], true)) {
                 throw new \LogicException('thenBy() requires a preceding orderBy().');
             }

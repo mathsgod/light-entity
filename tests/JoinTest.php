@@ -86,7 +86,7 @@ class JoinTest extends TestCase
         self::assertSame([
             ['id' => 1, 'name' => 'Ada'], ['id' => 1, 'name' => 'Alice'],
             ['id' => 2, 'name' => 'Bob'], ['id' => 3, 'name' => null], ['id' => 4, 'name' => null],
-        ], $query->orderBy(Expr::field('id'))->orderBy(Expr::field('name'))->toArray());
+        ], $query->orderBy(Expr::field('id'))->thenBy(Expr::field('name'))->toArray());
         self::assertSame(5, $query->count());
         self::assertTrue($query->any(Expr::eq(Expr::field('name'), null)));
         self::assertSame(['id' => 2, 'name' => 'Bob'], $query->first(Expr::eq(Expr::field('id'), 2)));

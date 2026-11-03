@@ -834,3 +834,30 @@ is discarded. Add `orderBy()` after the set operation for a defined output order
 DbSet also exposes these four methods. It projects mapped columns automatically
 and returns untracked Queryable rows; both mappings must have matching column
 names and order. Includes and entity tracking are not applied to these results.
+
+## Client-side groupJoin, zip and chunk
+
+php-linq exposes these operations on Queryable, but this SQL provider does not
+translate them. Direct use throws `LogicException` with guidance to call
+`asEnumerable()` first. Existing SQL operations continue to work.
+
+Apply filters and deterministic ordering in SQL, then explicitly switch to PHP:
+
+```php
+$users = $context->set(User::class)->asQueryable()
+    ->where(Expr::eq(Expr::field('active'), true))
+    ->orderBy(Expr::field('id'))
+    ->asEnumerable();
+$batches = $users->chunk(100);
+```
+
+After the switch, `groupJoin()` and `zip()` take ordinary iterables and PHP
+callbacks, using Enumerable equality rules. `groupJoin()` retains each outer row
+with an enumerable of matching inner rows; `zip()` pairs positions up to the
+shorter input; `chunk()` yields arrays, retaining a partial final batch.
+`asQueryable()` returns raw rows rather than tracked entities.
+
+This does not add SQL-side batching: the SQL provider fetches results before PHP
+chunking. Limit the query before switching if a full result set is too large.
+Actual SQL translation for these operations requires separate compiler, dialect
+and result-materialization support; updating the dependency alone does not add it.
