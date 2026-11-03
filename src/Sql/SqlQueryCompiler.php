@@ -29,6 +29,41 @@ final readonly class SqlQueryCompiler
         return $this->dialect->compile($plan);
     }
 
+    /** Compile a direct single-table write. null assignments means DELETE. */
+    public function compileModification(Expression $expression, ?array $values = null): CompiledQuery
+    {
+        $source = $expression;
+        while ($source instanceof MethodCallExpression) {
+            if ($source->method !== 'where') {
+                throw new \LogicException('Bulk writes support only a table source and where() conditions.');
+            }
+            $source = $source->source;
+        }
+        if (!$source instanceof SourceExpression) {
+            throw new \LogicException('Bulk writes require a table source; raw SQL is not supported.');
+        }
+        $plan = $this->plan($expression);
+        $this->validatePlan($plan);
+        $plan->terminal = $values === null ? 'delete' : 'update';
+        if ($values !== null) {
+            if ($values === []) { throw new \InvalidArgumentException('executeUpdate() requires at least one assignment.'); }
+            foreach ($values as $name => $value) {
+                if (!is_string($name) || $name === '' || str_contains($name, '.')) {
+                    throw new \InvalidArgumentException('Update targets must be unqualified column names.');
+                }
+                if (!$value instanceof ValueExpression) {
+                    if ($value !== null && !is_scalar($value)) {
+                        throw new \InvalidArgumentException('Update values must be scalar, null, or value expressions.');
+                    }
+                    $value = new ConstantExpression($value);
+                }
+                $this->validateValue($value, false);
+                $plan->assignments[$name] = $value;
+            }
+        }
+        return $this->dialect->compile($plan);
+    }
+
     private function plan(Expression $expression): QueryPlan
     {
         if ($expression instanceof MethodCallExpression

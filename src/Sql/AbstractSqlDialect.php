@@ -24,6 +24,23 @@ abstract class AbstractSqlDialect implements SqlDialect
         $this->parameterIndex = 0;
 
         $terminal = $query->terminal;
+        if (in_array($terminal, ['update', 'delete'], true)) {
+            $table = $this->quoteIdentifier($query->table);
+            if ($terminal === 'update') {
+                $assignments = [];
+                foreach ($query->assignments as $name => $value) {
+                    $assignments[] = $this->quoteIdentifier($name).' = '.$this->value($value);
+                }
+                $sql = 'UPDATE '.$table.' SET '.implode(', ', $assignments);
+            } else {
+                $sql = 'DELETE FROM '.$table;
+            }
+            if ($query->predicates !== []) {
+                $sql .= ' WHERE '.implode(' AND ', array_map($this->value(...), $query->predicates));
+            }
+            return new CompiledQuery($sql, $this->parameters, 'affected');
+        }
+
         if (in_array($terminal, ['sum', 'average', 'min', 'max'], true)) {
             $query = clone $query;
             if ($query->limit === null && $query->offset === null) $query->orderings = [];

@@ -166,6 +166,34 @@ class DbContext
         return $entity;
     }
 
+    /** @internal Executes immediately without updating tracked entities or snapshots. */
+    public function executeModification(EntityMapping $mapping, Queryable $query, ?array $values = null): int
+    {
+        if ($query->provider() !== $this->provider) {
+            throw new \LogicException('Bulk writes require the context query provider.');
+        }
+        foreach ($values ?? [] as $name => $value) {
+            if (!in_array($name, $mapping->properties, true)) {
+                throw new \InvalidArgumentException('Unknown update property: '.(string) $name);
+            }
+            if (in_array($name, $mapping->keys, true) || ($mapping->columns[$name] ?? null)?->computed) {
+                throw new \InvalidArgumentException('Bulk updates cannot assign primary keys or computed columns.');
+            }
+        }
+        return $this->provider->executeModification($query->expression(), $values);
+    }
+
+    /** @return \Generator<int, object> @internal */
+    public function streamNoTrackingEntities(EntityMapping $mapping, Queryable $query): \Generator
+    {
+        if ($query->provider() !== $this->provider) {
+            throw new \LogicException('Streaming requires the context query provider.');
+        }
+        foreach ($this->provider->streamRows($query->expression()) as $row) {
+            yield $this->materialize($mapping, $row, QueryTrackingBehavior::NoTracking);
+        }
+    }
+
     /** @return list<object>|null @internal */
     public function fetchNoTrackingEntities(EntityMapping $mapping, Queryable $query): ?array
     {

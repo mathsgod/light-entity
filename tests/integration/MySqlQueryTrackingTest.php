@@ -102,4 +102,32 @@ final class MySqlQueryTrackingTest extends TestCase
         self::assertSame(EntityState::Detached, $db->entry($order)->state);
         self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn());
     }
+    public function testStreamingIsUnbufferedAndReleasesConnectionAfterBreak(): void
+    {
+        $pdo = $this->connection();
+        $pdo->exec('CREATE TABLE users(user_id INT PRIMARY KEY, name VARCHAR(60))');
+        $pdo->exec("INSERT INTO users VALUES(1,'Ada'),(2,'Bob'),(3,'Cara')");
+        $db = new DbContext($pdo);
+        $query = $db->set(MySqlReadUser::class)->asNoTracking()->orderBy(\Light\Linq\Expr::field('user_id'));
+        $bufferAttribute = PHP_VERSION_ID >= 80400 ? \Pdo\Mysql::ATTR_USE_BUFFERED_QUERY : \PDO::MYSQL_ATTR_USE_BUFFERED_QUERY;
+        foreach ([true, false] as $buffered) {
+            $pdo->setAttribute($bufferAttribute, $buffered);
+            $iterator = $query->getIterator();
+            $iterator->rewind();
+            self::assertSame('Ada', $iterator->current()->name);
+            self::assertSame($buffered, $pdo->getAttribute($bufferAttribute));
+            try {
+                $pdo->query('SELECT 1');
+                self::fail('An active unbuffered result must block another query.');
+            } catch (\PDOException $e) {
+                self::assertStringContainsString('unbuffered', $e->getMessage());
+            }
+            unset($iterator);
+            self::assertSame(1, (int) $pdo->query('SELECT 1')->fetchColumn());
+            foreach ($query as $user) { break; }
+            self::assertSame(1, (int) $pdo->query('SELECT 1')->fetchColumn());
+            self::assertSame(['Ada', 'Bob', 'Cara'], array_map(fn ($u) => $u->name, $query->toArray()));
+            self::assertSame([], $db->changeTracker->entries());
+        }
+    }
 }

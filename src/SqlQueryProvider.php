@@ -46,6 +46,46 @@ final readonly class SqlQueryProvider implements IQueryProvider
         };
     }
 
+    /** @internal null values selects DELETE. */
+    public function executeModification(Expression $expression, ?array $values = null): int
+    {
+        $statement = $this->executeStatement($this->compiler->compileModification($expression, $values));
+        try {
+            return $statement->rowCount();
+        } finally {
+            $statement->closeCursor();
+        }
+    }
+
+    /** Streams entity rows without buffering the result in PHP. @internal
+     * @return \Generator<int, array<string, mixed>>
+     */
+    public function streamRows(Expression $expression): \Generator
+    {
+        $query = $this->compile($expression);
+        if ($query->resultMode !== 'rows') {
+            throw new \LogicException('Entity streaming requires a row query.');
+        }
+        // Buffering is selected when the statement executes. Restore the connection
+        // option before yielding; the active result itself remains unbuffered.
+        $mysql = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+        $bufferAttribute = $mysql ? (PHP_VERSION_ID >= 80400 ? \Pdo\Mysql::ATTR_USE_BUFFERED_QUERY : PDO::MYSQL_ATTR_USE_BUFFERED_QUERY) : null;
+        $buffered = $mysql ? $this->pdo->getAttribute($bufferAttribute) : null;
+        try {
+            if ($mysql) { $this->pdo->setAttribute($bufferAttribute, false); }
+            $statement = $this->executeStatement($query);
+        } finally {
+            if ($mysql) { $this->pdo->setAttribute($bufferAttribute, $buffered); }
+        }
+        try {
+            while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+                yield $row;
+            }
+        } finally {
+            $statement->closeCursor();
+        }
+    }
+
     /** @return list<object>|null null selects the existing hydration path. @internal */
     public function executeNoTrackingEntities(Expression $expression, EntityMapping $mapping): ?array
     {

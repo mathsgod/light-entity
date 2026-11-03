@@ -33,6 +33,8 @@ final class QueryPlan
     public ?ValueExpression $selection = null;
     public ?int $offset = null;
     public ?int $limit = null;
+    /** @var array<string, ValueExpression> */
+    public array $assignments = [];
     public string $terminal = 'sequence';
     public ?ValueExpression $terminalPredicate = null;
     public mixed $defaultValue = null;

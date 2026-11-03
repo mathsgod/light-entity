@@ -128,7 +128,7 @@ Run `composer install` to install dependencies, including `mathsgod/light-linq` 
 
 Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite runs against SQLite. The MySQL suite also covers composite-key persistence, tracking, migrations and rollback/retry, including auto-increment key components.
 
-No relationship loading, migration version/history management, custom entity column aliases, optimistic concurrency, async operations or `executeUpdate` yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
+No relationship loading, migration version/history management, custom entity column aliases, optimistic concurrency, async operations yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
 
 ## Adding multiple entities
 
@@ -861,3 +861,61 @@ This does not add SQL-side batching: the SQL provider fetches results before PHP
 chunking. Limit the query before switching if a full result set is too large.
 Actual SQL translation for these operations requires separate compiler, dialect
 and result-materialization support; updating the dependency alone does not add it.
+
+## Streaming no-tracking queries
+
+Iterating a `DbSet` with `asNoTracking()` and no `include()` reads and hydrates
+one row at a time, without `fetchAll()` or retaining entities in the change tracker:
+
+```php
+foreach ($db->set(User::class)->asNoTracking() as $user) {
+    // Process each row without accumulating the results.
+}
+```
+
+`toArray()` still collects all entities. Queries with `include()` and tracking
+queries retain their existing buffered behavior. Projections returned by
+`select()` / `asQueryable()` are unchanged. Raw SQL entity queries also stream.
+
+For MySQL, the streaming statement executes with PDO buffering disabled; the
+connection's buffering option is restored before the first entity is yielded.
+While the result is active, do not run another query on the same connection
+(including lazy relationship getters or `saveChanges()`). Finish the iteration,
+use another connection, or buffer the results first. The cursor closes on
+completion or when the iterator is destroyed, including a normal `foreach`
+`break` or exception. If you keep an explicit iterator reference, release it
+with `unset($iterator)` when stopping early. This is synchronous streaming,
+not asynchronous database I/O.
+
+## Bulk updates and deletes
+
+Execute a single parameterized SQL statement without loading entities:
+
+```php
+$affected = $db->set(Order::class)
+    ->where(['status' => 'pending'])
+    ->executeUpdate(['status' => 'cancelled']);
+
+$deleted = $db->set(Order::class)
+    ->where(['status' => 'cancelled'])
+    ->executeDelete();
+```
+
+Update values may be scalar, null, or supported scalar value expressions such
+as `Expr::field('other_column')`. Assignment targets must be mapped properties;
+primary keys and computed columns cannot be assigned. Empty assignments fail.
+
+The first version accepts a table source with zero or more `where()` calls.
+Ordering, pagination, raw SQL sources, includes and preloaded relationship
+collections are rejected rather than ignored. Without a `where()` condition,
+the operation affects the entire table. Joins and projections do not expose
+these methods.
+
+Writes execute immediately, return the PDO driver's affected-row count, and
+participate in an existing connection transaction without starting or committing
+one. MySQL's count can depend on the connection's matched/changed-row setting.
+No `saveChanges()` call is needed. Save interceptors, entity tracking, snapshots
+and relationship caches are bypassed: already loaded entities remain stale,
+and a later `saveChanges()` can overwrite bulk changes. Use a fresh context or
+explicitly reload affected entities before continuing tracked work. Multiple
+bulk operations are not automatically wrapped in one transaction.

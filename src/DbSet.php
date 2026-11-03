@@ -247,6 +247,29 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         }
     }
 
+    /** Executes a single UPDATE immediately; returns the driver's affected-row count.
+     * @param array<string, scalar|null|ValueExpression> $values
+     */
+    public function executeUpdate(array $values): int
+    {
+        $this->validateModification();
+        return $this->context->executeModification($this->mapping, $this->query, $values);
+    }
+
+    /** Executes a single DELETE immediately without loading or detaching entities. */
+    public function executeDelete(): int
+    {
+        $this->validateModification();
+        return $this->context->executeModification($this->mapping, $this->query);
+    }
+
+    private function validateModification(): void
+    {
+        if ($this->includes !== [] || $this->loaded !== null) {
+            throw new \LogicException('Bulk writes do not support includes or preloaded relationship collections.');
+        }
+    }
+
     public function remove(object $entity): void { $this->context->remove($this->mapping->class, $entity); }
 
     public function getIterator(): \Traversable
@@ -256,6 +279,8 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         if ($this->loaded !== null) {
             $this->context->loadIncludes($this->mapping, $this->loaded, $this->includes, $tracking);
             yield from $this->loaded;
+        } elseif ($tracking === QueryTrackingBehavior::NoTracking && $this->includes === []) {
+            yield from $this->context->streamNoTrackingEntities($this->mapping, $this->query);
         } elseif ($tracking === QueryTrackingBehavior::NoTracking
             && ($entities = $this->context->fetchNoTrackingEntities($this->mapping, $this->query)) !== null) {
             $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking);
