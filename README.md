@@ -1,6 +1,6 @@
 # light-entity
 
-An experimental PHP 8.3+ database-first ORM built on PDO and `mathsgod/php-linq`. Independent of light-db and Laminas DB.
+An experimental PHP 8.3+ database-first ORM built on PDO and `mathsgod/light-linq`. Independent of light-db and Laminas DB.
 
 ## Runtime automatic mapping
 
@@ -124,7 +124,7 @@ assigned to the entity only after a successful save.
 
 The test suite uses PHPUnit 12.5 and requires PHP 8.3 or later.
 
-Keep this repository alongside `php-linq` and run `composer install`. The path repository in `composer.json` is for local development; consuming applications must configure their own path repository until a suitable php-linq release is available.
+Run `composer install` to install dependencies, including `mathsgod/light-linq` 1.x.
 
 Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite runs against SQLite. The MySQL suite also covers composite-key persistence, tracking, migrations and rollback/retry, including auto-increment key components.
 
@@ -146,9 +146,9 @@ $db->saveChanges();
 
 ## Direct SQL query provider
 
-`Light\Entity\SqlQueryProvider` implements `Light\Linq\IQueryProvider` and executes php-linq expression trees through PDO.
+`Light\Entity\SqlQueryProvider` implements `Light\Linq\IQueryProvider` and executes light-linq expression trees through PDO.
 It returns rows/scalars directly; use `DbSet` for tracked entity objects.
-SQL compilation and dialects live in this package under `Light\Entity\Sql`; php-linq supplies the database-independent query operators and expression trees.
+SQL compilation and dialects live in this package under `Light\Entity\Sql`; light-linq supplies the database-independent query operators and expression trees.
 
 The available dialects are `MySqlDialect`, `SqlServerDialect`,
 `PostgreSqlDialect`, and `SqliteDialect`. They handle identifier quoting and
@@ -837,7 +837,7 @@ names and order. Includes and entity tracking are not applied to these results.
 
 ## Client-side groupJoin, zip and chunk
 
-php-linq exposes these operations on Queryable, but this SQL provider does not
+light-linq exposes these operations on Queryable, but this SQL provider does not
 translate them. Direct use throws `LogicException` with guidance to call
 `asEnumerable()` first. Existing SQL operations continue to work.
 

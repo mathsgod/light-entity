@@ -136,4 +136,4 @@ Supported: scalar calls in predicates, ordering, scalar/named projections, and j
 
 Not provided: table-valued functions, stored-procedure execution through this API, arbitrary SQL fragments, automatic function creation, client-side evaluation, or automatic translation of ordinary PHP function calls.
 
-`FunctionExpression` implements the existing php-linq `ValueExpression` interface but is SQL-specific. The in-memory query provider rejects it rather than attempting to invoke a PHP function.
+`FunctionExpression` implements the existing light-linq `ValueExpression` interface but is SQL-specific. The in-memory query provider rejects it rather than attempting to invoke a PHP function.

@@ -1,19 +1,13 @@
 {
     "name": "mathsgod/light-entity",
-    "description": "A PDO-based entity ORM built on php-linq",
+    "description": "A PDO-based entity ORM built on light-linq",
     "type": "library",
     "license": "MIT",
     "require": {
         "php": ">=8.3",
         "ext-pdo": "*",
-        "mathsgod/php-linq": "@dev"
+        "mathsgod/light-linq": "^1.0"
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../light-linq"
-        }
-    ],
     "autoload": {
         "psr-4": {
             "Light\\Entity\\": "src/"
