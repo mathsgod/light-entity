@@ -10,6 +10,7 @@
          colors="true">
     <testsuites>
         <testsuite name="mysql-8-integration">
+            <file>tests/integration/MySqlEntityExtensionsTest.php</file>
             <file>tests/integration/MySqlWhereRawTest.php</file>
             <file>tests/integration/MySqlValueConversionTest.php</file>
             <file>tests/integration/MySqlBulkWriteTest.php</file>

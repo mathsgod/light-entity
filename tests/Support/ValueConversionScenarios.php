@@ -181,7 +181,7 @@ trait ValueConversionScenarios
                 )],
                 comparers: ['settings'=>new ValueComparer(fn ($a,$b) => $a === $b, fn ($v) => $v)],
             );
-            self::assertFalse($mapping->pdoFetchClassCompatible);
+            self::assertSame($class === DynamicConvertedAccount::class, $mapping->pdoFetchClassCompatible);
             $db = new DbContext($pdo, mappings: [$mapping]);
             $set = $db->set($class);
             $read = $set->asNoTracking()->toArray()[0];

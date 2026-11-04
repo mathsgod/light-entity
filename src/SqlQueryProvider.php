@@ -124,15 +124,23 @@ final readonly class SqlQueryProvider implements IQueryProvider
         }
         try {
             $class = $mapping->class;
-            $entities = $statement->fetchAll(PDO::FETCH_FUNC, static function (...$values) use ($names, $class): Entity {
-                // Eligibility checks above exclude constructors and custom setters.
-                $entity = new $class();
-                $entity->initializeFromRow(array_combine($names, $values));
+            $reflection = new \ReflectionClass($class);
+            $hasConstructor = $reflection->getConstructor() !== null;
+            $converters = $mapping->converters;
+            $entities = $statement->fetchAll(PDO::FETCH_FUNC, static function (...$values) use ($names, $class, $reflection, $hasConstructor, $converters): Entity {
+                // Match ordinary hydration: constructors never run; custom setters use fallback.
+                $entity = $hasConstructor ? $reflection->newInstanceWithoutConstructor() : new $class();
+                $row = array_combine($names, $values);
+                foreach ($converters as $name => $converter) {
+                    $row[$name] = $converter->convertFromProvider($row[$name]);
+                }
+                $entity->initializeFromRow($row);
                 return $entity;
             });
             if ($mapping->booleanProperties !== []) {
                 foreach ($entities as $entity) {
                     foreach ($mapping->booleanProperties as $name) {
+                        if (isset($converters[$name])) { continue; }
                         $value = $entity->$name;
                         $entity->$name = $value === null ? null : (bool) $value;
                     }

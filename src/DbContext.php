@@ -116,6 +116,13 @@ class DbContext
         return $this->changeTracker->entry($mapping, $entity);
     }
 
+    /** Attach an existing entity; optional originals are model values, not raw database values. */
+    public function attach(object $entity, ?array $originalValues = null): EntityEntry
+    {
+        $mapping = $this->changeTracker->mapping($entity) ?? $this->model->getEntityType($entity::class);
+        return $this->changeTracker->attach($mapping, $entity, $originalValues);
+    }
+
     /** Marks all writable non-key properties for update on saveChanges(); requires a complete key. */
     public function update(object $entity): EntityEntry
     {

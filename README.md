@@ -1085,3 +1085,44 @@ that mapping, ensuring every configured property passes through its converter.
 The comparer must implement equality and copying consistently; use a deep copy
 for nested mutable objects. No hash callback is required because tracking uses
 its existing identity lookup rather than hashing converted property values.
+
+### Reusing Entity storage in an Active Record adapter
+
+Dynamic `Entity` properties support reference access, including nested changes
+such as `$user->settings['theme'] = 'dark'`. Converters decode provider values;
+`EntityMapping::applyValues()` assigns already-converted model values, validates
+field names, and respects public typed properties.
+
+```php
+$user = $db->set(User::class)->asNoTracking()->first();
+// $mapping is the EntityMapping used to configure $db.
+$original = $mapping->snapshotEntity($user);
+$user->settings['theme'] = 'dark';
+$db->attach($user, $original);
+$db->saveChanges();
+```
+
+`attach()` accepts a complete
+snapshot of model values, copies it with the configured comparers, and tracks
+the actual object without overwriting pending changes. Keys must match and the
+entity and its identity must not already be tracked.
+
+For a snapshot taken immediately after hydration, `snapshotEntity($entity,
+fromProvider: true)` can use the optional `ValueComparer` constructor callback
+`snapshotFromProvider`. This callback must produce an independent snapshot of
+fresh converter output. Arrays containing no objects or references can safely
+use PHP copy-on-write; mutable objects require copying. Without the callback,
+the ordinary snapshot callback runs. Custom accessors and mapped public
+properties always use the ordinary path.
+
+### Bulk materialization and streaming
+
+`asNoTracking()->toArray()` uses native MySQL bulk hydration when the mapping
+and query are compatible. Dynamic Entity subclasses may have constructors:
+hydration bypasses them just as ordinary hydration does. Configured converters
+receive raw provider values once per non-null column, before schema coercion.
+Public mapped properties, custom setters, raw SQL, BIT/YEAR and non-native PDO
+fetch settings retain the general conversion path. Typed entities and SQLite
+continue to use ordinary hydration. `foreach` keeps the streaming path; requesting
+an array intentionally materializes the result. Partial mappings still validate
+missing columns and ignore extra columns through the existing fallback.

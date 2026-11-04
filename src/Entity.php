@@ -38,7 +38,13 @@ abstract class Entity implements \JsonSerializable
     }
 
 
-    public function __get(string $name): mixed { return $this->data[$name] ?? null; }
+    public function &__get(string $name): mixed
+    {
+        if (!array_key_exists($name, $this->data)) { $this->data[$name] = null; }
+        return $this->data[$name];
+    }
+    /** @internal Model-value storage, returned by value (PHP copy-on-write). */
+    final public function storedValues(): array { return $this->data; }
     public function __set(string $name, mixed $value): void { $this->data[$name] = $value; }
     public function __isset(string $name): bool { return isset($this->data[$name]); }
     public function hasValue(string $name): bool { return array_key_exists($name, $this->data); }

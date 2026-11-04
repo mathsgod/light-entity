@@ -117,6 +117,23 @@ final class ChangeTracker
         if ($entity instanceof Entity) { $entity->attachRelations($this->context, $mapping); }
     }
 
+    /** Attach an existing entity with a caller-supplied model-value baseline. */
+    public function attach(EntityMapping $mapping, object $entity, ?array $originalValues = null): EntityEntry
+    {
+        $this->assertMapping($mapping, $entity);
+        if ($this->records->offsetExists($entity)) { throw new \LogicException('Entity is already tracked.'); }
+        $current = $mapping->values($entity);
+        $original = $mapping->validateOriginalValues($originalValues ?? $current);
+        $this->validateKey($mapping, $current, $original);
+        $this->assertIdentityAvailable($mapping, $current, $entity);
+        // User callbacks may throw; build the snapshot before changing tracking state.
+        $snapshot = $mapping->snapshotValues($original);
+        $this->knownMappings[$entity] = $mapping;
+        $this->records[$entity] = ['mapping'=>$mapping, 'state'=>EntityState::Unchanged, 'original'=>$snapshot, 'forced'=>false];
+        if ($entity instanceof Entity) { $entity->attachRelations($this->context, $mapping); }
+        return $this->entry($mapping, $entity);
+    }
+
     /** @internal */
     public function add(EntityMapping $mapping, object $entity): void
     {
@@ -179,7 +196,7 @@ final class ChangeTracker
             if ($state === EntityState::Deleted) {
                 $this->records->offsetUnset($entry->entity);
             } else {
-                foreach ($values as $property => $value) { $entry->entity->$property = $value; }
+                $entry->metadata->applyValues($entry->entity, $values);
                 $this->records[$entry->entity] = [
                     'mapping' => $entry->metadata, 'state' => EntityState::Unchanged,
                     'original' => $snapshot, 'forced' => false,

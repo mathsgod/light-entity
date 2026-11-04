@@ -41,6 +41,15 @@ final class MySqlFetchCustomSetterRecord extends Entity
     }
 }
 
+final class MySqlBulkProbeContext extends DbContext
+{
+    public int $materialized = 0;
+    public function materialize(\Light\Entity\EntityMapping $mapping, array $row, \Light\Entity\QueryTrackingBehavior $tracking = \Light\Entity\QueryTrackingBehavior::TrackAll): object
+    {
+        ++$this->materialized;
+        return parent::materialize($mapping, $row, $tracking);
+    }
+}
 final class MySqlFetchClassTest extends TestCase
 {
     use MySqlDatabase;
@@ -80,14 +89,14 @@ final class MySqlFetchClassTest extends TestCase
         self::assertSame([], $set->asNoTracking()->where(['id' => 99])->toArray());
     }
 
-    public function testConstructorsTypedPropertiesAndStringifiedFetchesRetainFallback(): void
+    public function testConstructorsAreSkippedAndTypedOrStringifiedFetchesRetainFallback(): void
     {
         $pdo = $this->connection();
         $pdo->exec('CREATE TABLE constructor_records (id INT PRIMARY KEY, active BOOLEAN)');
         $pdo->exec('INSERT INTO constructor_records VALUES(1,1),(2,NULL)');
         $db = new DbContext($pdo);
         foreach ([MySqlFetchConstructorRecord::class, MySqlFetchTypedRecord::class] as $class) {
-            self::assertFalse($db->model->getEntityType($class)->pdoFetchClassCompatible);
+            self::assertSame($class === MySqlFetchConstructorRecord::class, $db->model->getEntityType($class)->pdoFetchClassCompatible);
             $rows = $db->set($class)->asNoTracking()->orderBy(Expr::field('id'))->toArray();
             self::assertSame(1, $rows[0]->id);
             self::assertSame(1, $rows[0]->active);
@@ -147,4 +156,43 @@ final class MySqlFetchClassTest extends TestCase
         self::assertSame(1, $rows[0]->active);
         self::assertNull($rows[1]->active);
     }
+    public function testNativeBulkHydrationRunsConvertersOnceAndSkipsRequiredConstructors(): void
+    {
+        $pdo = $this->connection();
+        $pdo->exec('CREATE TABLE constructor_records (id INT PRIMARY KEY, active BOOLEAN)');
+        $pdo->exec('INSERT INTO constructor_records VALUES(1,1),(2,NULL)');
+        $calls = 0;
+        $mapping = \Light\Entity\EntityMapping::fromSchema(MySqlFetchConstructorRecord::class, 'constructor_records',
+            (new \Light\Entity\Schema\SchemaReader($pdo))->columns('constructor_records'),
+            converters: ['active' => new \Light\Entity\ValueConverter(fn ($v) => $v,
+                function ($value) use (&$calls) { ++$calls; return 'provider:'.$value; })]);
+        self::assertTrue($mapping->pdoFetchClassCompatible);
+        $db = new DbContext($pdo, mappings: [$mapping]);
+        $set = $db->set(MySqlFetchConstructorRecord::class)->asNoTracking();
+        $rows = $set->orderBy(Expr::field('id'))->toArray();
+        self::assertSame('provider:1', $rows[0]->active);
+        self::assertNull($rows[1]->active);
+        self::assertSame(1, $calls);
+        $raw = $set->fromSqlRaw('SELECT * FROM constructor_records ORDER BY id')->toArray();
+        self::assertSame($rows[0]->jsonSerialize(), $raw[0]->jsonSerialize());
+        self::assertSame($rows[1]->jsonSerialize(), $raw[1]->jsonSerialize());
+        self::assertSame(2, $calls);
+        self::assertSame([], $db->changeTracker->entries());
+    }
+
+    public function testToArrayUsesBulkHydrationAndIterationKeepsStreaming(): void
+    {
+        $pdo = $this->connection();
+        $pdo->exec('CREATE TABLE constructor_records (id INT PRIMARY KEY, active BOOLEAN)');
+        $pdo->exec('INSERT INTO constructor_records VALUES(1,1),(2,NULL)');
+        $db = new MySqlBulkProbeContext($pdo);
+        $set = $db->set(MySqlFetchConstructorRecord::class)->asNoTracking()->orderBy(Expr::field('id'));
+        $bulk = $set->toArray();
+        self::assertCount(2, $bulk);
+        self::assertSame(0, $db->materialized);
+        $stream = iterator_to_array($set, false);
+        self::assertSame(2, $db->materialized);
+        self::assertSame(array_map(fn ($v) => $v->jsonSerialize(), $bulk), array_map(fn ($v) => $v->jsonSerialize(), $stream));
+    }
+
 }

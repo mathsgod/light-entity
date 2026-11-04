@@ -307,7 +307,15 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         }
     }
     /** @return list<T> */
-    public function toArray(): array { return iterator_to_array($this, false); }
+    public function toArray(): array
+    {
+        // Materialization can use native bulk hydration; foreach/cursor keep streaming.
+        if ($this->loaded === null && $this->includes === [] && $this->trackingMode() === QueryTrackingBehavior::NoTracking) {
+            $entities = $this->context->fetchNoTrackingEntities($this->mapping, $this->query);
+            if ($entities !== null) { return $entities; }
+        }
+        return iterator_to_array($this, false);
+    }
 
     private function entityTerminal(string $method, ?ValueExpression $predicate, ?object $default = null): ?object
     {

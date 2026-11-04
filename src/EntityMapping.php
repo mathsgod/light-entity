@@ -8,7 +8,9 @@ namespace Light\Entity;
 final readonly class EntityMapping
 {
     private \ReflectionClass $reflection;
-    /** @internal Eligibility for native bulk hydration; also compatible with FETCH_CLASS. */
+    private bool $directValuesCompatible;
+    private array $propertyKeys;
+    /** @internal Eligibility for native bulk hydration (legacy property name). */
     public bool $pdoFetchClassCompatible;
     /** @var list<string> @internal */
     public array $booleanProperties;
@@ -60,8 +62,14 @@ final readonly class EntityMapping
             }
         }
         $reflection = $this->reflection = new \ReflectionClass($class);
-        $this->pdoFetchClassCompatible = $converters === [] && $reflection->isSubclassOf(Entity::class)
-            && $reflection->getConstructor() === null
+        $this->propertyKeys = array_fill_keys($properties, true);
+        $this->directValuesCompatible = $reflection->isSubclassOf(Entity::class)
+            && $reflection->getMethod('__get')->getDeclaringClass()->getName() === Entity::class
+            && $reflection->getMethod('__set')->getDeclaringClass()->getName() === Entity::class
+            && $reflection->getMethod('__isset')->getDeclaringClass()->getName() === Entity::class
+            && array_filter($properties, fn ($name) => $reflection->hasProperty($name)
+                && $reflection->getProperty($name)->isPublic()) === [];
+        $this->pdoFetchClassCompatible = $reflection->isSubclassOf(Entity::class)
             && $reflection->getMethod('__set')->getDeclaringClass()->getName() === Entity::class
             && array_filter($properties, fn ($name) => $reflection->hasProperty($name)) === []
             && array_filter($properties, fn ($name) => !isset($columns[$name])
@@ -129,19 +137,52 @@ final readonly class EntityMapping
 
     public function values(object $entity): array
     {
-        if (!$entity instanceof $this->class) {
-            throw new \InvalidArgumentException('Entity does not match mapping.');
-        }
-        $values = [];
-        foreach ($this->properties as $property) {
-            $value = $entity->$property ?? null;
-            if ($value !== null && !is_scalar($value)) {
-                if (!isset($this->converters[$property], $this->comparers[$property])) {
-                    throw new \InvalidArgumentException('Non-scalar model values require a ValueConverter and ValueComparer.');
-                }
+        if (!$entity instanceof $this->class) { throw new \InvalidArgumentException('Entity does not match mapping.'); }
+        if ($this->directValuesCompatible && $entity instanceof Entity) {
+            $values = $entity->storedValues();
+            if (array_keys($values) !== $this->properties) {
+                $values = array_replace(array_fill_keys($this->properties, null), array_intersect_key($values, $this->propertyKeys));
             }
-            $values[$property] = $value;
+        } else {
+            $values = [];
+            foreach ($this->properties as $property) { $values[$property] = $entity->$property ?? null; }
         }
+        $this->validateModelValues($values);
+        return $values;
+    }
+
+    private function validateModelValues(array $values): void
+    {
+        foreach ($values as $property => $value) {
+            if ($value !== null && !is_scalar($value) && !isset($this->converters[$property], $this->comparers[$property])) {
+                throw new \InvalidArgumentException('Non-scalar model values require a ValueConverter and ValueComparer.');
+            }
+        }
+    }
+
+    /** Apply model values, not database values. Typed assignments use normal PHP semantics. */
+    public function applyValues(object $entity, array $values): void
+    {
+        if (!$entity instanceof $this->class) { throw new \InvalidArgumentException('Entity does not match mapping.'); }
+        if (array_diff_key($values, $this->propertyKeys) !== []) { throw new \InvalidArgumentException('Values contain unknown mapped properties.'); }
+        foreach ($values as $property => $value) { $entity->$property = $value; }
+    }
+
+    /** Build a model-value snapshot without duplicating storage for ordinary dynamic entities. */
+    public function snapshotEntity(object $entity, bool $fromProvider = false): array
+    {
+        return $this->snapshotValues($this->values($entity), $fromProvider && $this->directValuesCompatible);
+    }
+
+    /** Normalize and validate a complete original-value dictionary before tracking it. */
+    public function validateOriginalValues(array $values): array
+    {
+        if (count($values) !== count($this->properties) || array_diff_key($values, $this->propertyKeys) !== []) {
+            throw new \InvalidArgumentException('Original values must contain exactly all mapped properties.');
+        }
+        $values = array_replace(array_fill_keys($this->properties, null), $values);
+        $this->validateModelValues($values);
+        $this->keyValues($values);
         return $values;
     }
 
@@ -210,10 +251,14 @@ final readonly class EntityMapping
         return $filter;
     }
 
-    public function snapshotValues(array $values): array
+    public function snapshotValues(array $values, bool $fromProvider = false): array
     {
-        foreach ($values as $name => $value) {
-            if (isset($this->comparers[$name])) { $values[$name] = $this->comparers[$name]->snapshot($value); }
+        foreach ($this->comparers as $name => $comparer) {
+            if (!array_key_exists($name, $values)) { continue; }
+            $value = $values[$name];
+            $snapshot = $fromProvider ? $comparer->snapshotFromProvider($value) : $comparer->snapshot($value);
+            // Preserve the shared outer array when the provider snapshot is unchanged.
+            if (!$fromProvider || $snapshot !== $value) { $values[$name] = $snapshot; }
         }
         return $values;
     }
