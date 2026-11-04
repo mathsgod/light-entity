@@ -42,7 +42,7 @@ final class MySqlFromSqlRawTest extends TestCase
         $page = $blogs->where(Expr::eq(Expr::field('active'), true))->orderBy(Expr::field('name'))->skip(1)->take(1)->toArray();
         self::assertCount(1, $page);
         self::assertSame('Zoo', $page[0]->name);
-        self::assertTrue($page[0]->active); // MySQL TINYINT(1) maps to bool.
+        self::assertSame(1, $page[0]->active); // MySQL BOOLEAN is reported as TINYINT(1).
         self::assertSame(['Apple','Banana','Zoo'], $blogs->orderBy(Expr::field('name'))->select(Expr::field('name'))->toArray());
         $payload = "x'; DELETE FROM blogs; --";
         self::assertSame([], $root->fromSqlRaw('SELECT * FROM blogs WHERE name = ?', [$payload])->toArray());

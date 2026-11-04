@@ -26,7 +26,7 @@ final class MySqlFetchConstructorRecord extends Entity
 final class MySqlFetchTypedRecord
 {
     public int $id;
-    public ?bool $active;
+    public ?int $active;
 }
 
 #[Table('constructor_records')]
@@ -45,7 +45,7 @@ final class MySqlFetchClassTest extends TestCase
 {
     use MySqlDatabase;
 
-    public function testNativeTypesBooleanMetadataAndDetachedEntities(): void
+    public function testNativeTypesKeepTinyIntValuesAndDetachedEntities(): void
     {
         $pdo = $this->connection();
         $pdo->exec('CREATE TABLE fetch_records (id INT PRIMARY KEY, active TINYINT(1), optional BOOLEAN, unsigned_flag TINYINT(1) UNSIGNED, number TINYINT, amount DECIMAL(20,6), huge BIGINT UNSIGNED, ratio DOUBLE, body JSON, created_at DATETIME)');
@@ -54,15 +54,15 @@ final class MySqlFetchClassTest extends TestCase
         $set = $db->set(MySqlFetchRecord::class);
         $mapping = $db->model->getEntityType(MySqlFetchRecord::class);
         self::assertTrue($mapping->pdoFetchClassCompatible);
-        self::assertSame(['active', 'optional'], $mapping->booleanProperties);
+        self::assertSame([], $mapping->booleanProperties);
         $query = $set->orderBy(Expr::field('id'))->asQueryable();
         $native = $query->provider()->executeNoTrackingEntities($query->expression(), $mapping);
         self::assertCount(2, $native);
         self::assertInstanceOf(MySqlFetchRecord::class, $native[0]);
-        self::assertFalse($native[0]->active);
+        self::assertSame(0, $native[0]->active);
         self::assertNull($native[0]->optional);
         self::assertSame(1, $native[0]->unsigned_flag); // MySQL 8 removes display width from unsigned TINYINT metadata.
-        self::assertTrue($native[1]->active); // The documented TINYINT(1) convention includes nonzero values.
+        self::assertSame(2, $native[1]->active);
         self::assertSame(2, $native[0]->number);
         self::assertSame(1, $native[0]->id);
         self::assertSame('12345678901234.123456', $native[0]->amount);
@@ -74,8 +74,8 @@ final class MySqlFetchClassTest extends TestCase
         self::assertSame(EntityState::Detached, $db->entry($read[0])->state);
         self::assertCount(0, $db->changeTracker->entries());
         self::assertNotSame($read[0], $set->asNoTracking()->find(1));
-        self::assertTrue($set->find(2)->active); // Tracking and first() use the same bool convention.
-        self::assertTrue($set->asNoTracking()->where(['id' => 2])->first()->active);
+        self::assertSame(2, $set->find(2)->active);
+        self::assertSame(2, $set->asNoTracking()->where(['id' => 2])->first()->active);
         self::assertCount(1, $db->changeTracker->entries());
         self::assertSame([], $set->asNoTracking()->where(['id' => 99])->toArray());
     }
@@ -90,7 +90,7 @@ final class MySqlFetchClassTest extends TestCase
             self::assertFalse($db->model->getEntityType($class)->pdoFetchClassCompatible);
             $rows = $db->set($class)->asNoTracking()->orderBy(Expr::field('id'))->toArray();
             self::assertSame(1, $rows[0]->id);
-            self::assertTrue($rows[0]->active);
+            self::assertSame(1, $rows[0]->active);
             self::assertNull($rows[1]->active);
         }
         $pdo->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, true);
@@ -99,7 +99,7 @@ final class MySqlFetchClassTest extends TestCase
         self::assertNull($query->provider()->executeNoTrackingEntities($query->expression(), $db->model->getEntityType(MySqlFetchRecord::class)));
         $row = $set->asNoTracking()->find(1);
         self::assertSame(1, $row->id);
-        self::assertTrue($row->active);
+        self::assertSame(1, $row->active);
     }
 
     public function testRawSqlKeepsSchemaConversionAndMissingColumnValidation(): void
@@ -111,7 +111,7 @@ final class MySqlFetchClassTest extends TestCase
         $set = $db->set(MySqlFetchRecord::class)->asNoTracking();
         $rows = $set->fromSqlRaw('SELECT CAST(id AS CHAR) AS id, active, 99 AS extra FROM fetch_records')->toArray();
         self::assertSame(1, $rows[0]->id);
-        self::assertTrue($rows[0]->active);
+        self::assertSame(1, $rows[0]->active);
         self::assertFalse($rows[0]->hasValue('extra'));
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('missing mapped column: active');
@@ -144,7 +144,7 @@ final class MySqlFetchClassTest extends TestCase
         $rows = $set->asNoTracking()->orderBy(Expr::field('id'))->toArray();
         self::assertSame(4, MySqlFetchCustomSetterRecord::$calls);
         self::assertSame(1, $rows[0]->id);
-        self::assertTrue($rows[0]->active);
+        self::assertSame(1, $rows[0]->active);
         self::assertNull($rows[1]->active);
     }
 }

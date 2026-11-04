@@ -61,7 +61,7 @@ Unknown dynamic properties are not persisted. Only discovered columns participat
 ## Types and defaults
 
 - Integer columns become PHP integers when within PHP's integer range; larger values remain strings.
-- Boolean declarations become booleans. MySQL schema discovery treats columns reported as `tinyint(1)` as boolean: zero becomes false, nonzero becomes true, and NULL stays null. This is a mapping convention; use another integer width for numeric fields that must retain values such as 2 or 3. MySQL 8 may remove the display width from unsigned TINYINT metadata; those columns remain integers.
+- Boolean declarations become booleans when the database reports a boolean type. MySQL `TINYINT(1)` remains an integer, preserving values such as 0, 1 and 2; NULL stays null. MySQL reports `BOOLEAN`/`BOOL` aliases as `TINYINT(1)`, so these also remain integers. Configure a `ValueConverter` explicitly when an application wants boolean semantics.
 - Floating-point columns become floats. Decimal/numeric, dates, JSON and binary values remain strings; JSON is not decoded automatically. SQLite's own numeric storage may already lose decimal precision.
 - Nullable database values remain null. Database constraints enforce nullability and required columns.
 - Unset dynamic or uninitialized declared properties are omitted from inserts, allowing database defaults. Explicit null is sent as null; it does not request the default.

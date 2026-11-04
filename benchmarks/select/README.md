@@ -270,3 +270,43 @@ python3 compare-inline-attach.py 60
 驗證：一般測試 273 項、269 assertions（162 項因缺少 SQLite 跳過）；MySQL 整合測試 66 項、448 assertions 全數通過。新增跨實例／unset 狀態、custom setter dynamic properties、繼承 AllowDynamicProperties、property hooks raw/virtual 值測試。所有容器已清理。
 
 重跑三者：`./run.sh 15 10000`；重跑 A/B：`python3 compare-json-cache.py 30`。完整樣本：`results-json-cached-properties-10000.json`、`results-json-metadata-cache-10000.json`。
+
+
+## ValueConverter 機制 A/B（2026-11-04）
+
+重跑：`python3 compare-converters.py 30`。沿用七欄 SELECT → JSON fixture，10,000 筆、30 輪，交錯三版本 × cold/warm，共 180 個獨立 process。PHP 8.5.12、MySQL 8.0.46，CLI OPcache 關閉。before 為 `5a32e4c`，current 為 `a4a94df`；baseline 透過臨時 autoloader 載入全部 src，正式程式不會修改。全部 JSON checksum 一致。
+
+| Mode | Variant | Total median ms | Fetch ms | JSON ms | Peak +MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| cold | before | 55.139 | 47.293 | 7.923 | 11.389 |
+| cold | current-disabled | 55.974 | 48.216 | 7.716 | 11.411 |
+| cold | current-one-converter | 58.454 | 50.716 | 7.574 | 12.010 |
+| warm | before | 47.420 | 38.900 | 8.513 | 11.041 |
+| warm | current-disabled | 48.337 | 39.699 | 8.493 | 11.041 |
+| warm | current-one-converter | 47.265 | 38.811 | 8.375 | 11.041 |
+
+未啟用 converter 時，暖查詢中位數增加 1.93%（0.917 ms）；每輪配對差值中位數 +0.699 ms，bootstrap 95% interval [-0.242, +1.845] ms 涵蓋零，未能確認有穩定退步。暖查詢 RAM 相同。
+
+啟用版僅將 MySQL 已回傳的整數 age 原值回傳，暖查詢較 current-disabled 少 2.22%。Converter 取代原有 Column::convert，而不是疊加在 schema conversion 之後，所以簡單 callback 未必較預設型別轉換慢。不能推論任意 converter 都更快。啟用版 cold 額外包含 mapping/context 初始化，其相對 current-disabled 多約 2.481 ms，不能全部歸因於逐列轉換。
+
+本次量度 AsNoTracking()->toArray() → JSON，沒有 JSON decode、深層 snapshot、tracked 查詢或 saveChanges()；這些需要另設 workload。完整樣本及配對分析：`results-converters-10000.json`。測試容器及資料已移除。
+
+Benchmark Composer 設定亦已改為 mathsgod/light-linq；本機 path package 以 1.0.0 提供，符合 light-entity 的 ^1.0 requirement。
+
+
+## 加入 converter 機制後的三者比較（2026-11-04）
+
+`./run.sh 30 10000`；PHP 8.5.12、MySQL 8.0.46。10,000 筆 SELECT → JSON，30 輪共 180 個獨立 worker，三者輸出逐 byte 一致。light-entity 未配置 converter；light-db 使用現有 Laminas 底層。
+
+| Library | Mode | Median ms | P95 ms | Peak +MiB |
+| --- | --- | ---: | ---: | ---: |
+| laminas | cold | 29.011 | 31.527 | 10.366 |
+| php-entity | cold | 55.918 | 67.319 | 11.411 |
+| light-db | cold | 71.105 | 75.380 | 17.712 |
+| laminas | warm | 22.261 | 24.139 | 9.820 |
+| php-entity | warm | 48.718 | 51.229 | 11.041 |
+| light-db | warm | 49.716 | 52.625 | 15.559 |
+
+暖查詢 light-entity 與 light-db 接近（本次中位數少 2.01%），peak RAM 增量少 29.04%。這不是 light-db 改用 light-entity 後的結果，亦不含 JSON decode、tracked snapshot 或寫入成本。Laminas 回傳陣列，兩個 ORM 回傳 entity/model，所以數字包含不同 hydration／序列化成本。
+
+原始樣本及套件版本：`results-three-way-converters-10000.json`。容器及測試資料已清理。

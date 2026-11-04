@@ -14,6 +14,9 @@ final class ColumnTest extends TestCase
         foreach ([
             ['BoOlEaN', '1', true],
             ['INT', '42', 42],
+            ['tinyint(1)', '0', 0],
+            ['tinyint(1)', '1', 1],
+            ['tinyint(1)', '2', 2],
             ['DoUbLe', '1.25', 1.25],
             ['DECIMAL(20,6)', '12345678901234.123456', '12345678901234.123456'],
             ['BIGINT UNSIGNED', '18446744073709551615', '18446744073709551615'],

@@ -69,7 +69,6 @@ final readonly class SchemaReader
             $r['COLUMN_NAME'], $r['COLUMN_TYPE'], $r['IS_NULLABLE'] === 'YES',
             $r['COLUMN_KEY'] === 'PRI', str_contains(strtolower($r['EXTRA']), 'auto_increment'),
             ($r['GENERATION_EXPRESSION'] ?? '') !== '', $r['COLUMN_DEFAULT'],
-            preg_match('/^tinyint\(1\)(?:\s|$)/i', $r['COLUMN_TYPE']) === 1,
         ), $statement->fetchAll(PDO::FETCH_ASSOC));
     }
     /** Tables in the current database (or an explicitly qualified schema). */

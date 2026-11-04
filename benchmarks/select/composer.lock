@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "23023c17422e8ea45ba24f5da3b563ea",
+    "content-hash": "f887264046182ec69d9b49b2e215607e",
     "packages": [
         {
             "name": "graham-campbell/result-type",
@@ -478,6 +478,43 @@
             "time": "2025-10-11T18:13:12+00:00"
         },
         {
+            "name": "mathsgod/light-collections",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/mathsgod/light-collections.git",
+                "reference": "033e3bab182941c1e56e12a748934d17923c885c"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/mathsgod/light-collections/zipball/033e3bab182941c1e56e12a748934d17923c885c",
+                "reference": "033e3bab182941c1e56e12a748934d17923c885c",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.3"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^12.5"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Light\\Collections\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Standalone .NET-style generic collections for PHP",
+            "support": {
+                "issues": "https://github.com/mathsgod/light-collections/issues",
+                "source": "https://github.com/mathsgod/light-collections/tree/v1.0.0"
+            },
+            "time": "2026-11-03T03:30:36+00:00"
+        },
+        {
             "name": "mathsgod/light-db",
             "version": "dev-main",
             "dist": {
@@ -546,14 +583,15 @@
             "dist": {
                 "type": "path",
                 "url": "../..",
-                "reference": "abb17b76392374a1d8f856a53dd97ef6ea381376"
+                "reference": "a4a94dfc2dfb6adcc064fde24697c3bc13fda0a4"
             },
             "require": {
                 "ext-pdo": "*",
-                "mathsgod/php-linq": "@dev",
+                "mathsgod/light-linq": "^1.0",
                 "php": ">=8.3"
             },
             "require-dev": {
+                "mathsgod/light-collections": "^1.0",
                 "phpunit/phpunit": "^12.5"
             },
             "type": "library",
@@ -578,21 +616,21 @@
             "license": [
                 "MIT"
             ],
-            "description": "A PDO-based entity ORM built on php-linq",
+            "description": "A PDO-based entity ORM built on light-linq",
             "transport-options": {
                 "relative": true
             }
         },
         {
-            "name": "mathsgod/php-linq",
-            "version": "dev-main",
+            "name": "mathsgod/light-linq",
+            "version": "1.0.0",
             "dist": {
                 "type": "path",
-                "url": "../../../php-linq",
-                "reference": "534aeb84d1060a5412e45ef5de9f5d370eeb717b"
+                "url": "../../../light-linq",
+                "reference": "b687487d2e7e1d7f792f1255dabea97dfca7263f"
             },
             "require": {
-                "ext-dom": "*",
+                "mathsgod/light-collections": "^1.0",
                 "php": ">=8.3"
             },
             "require-dev": {
@@ -1378,8 +1416,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "mathsgod/light-db": 20,
-        "mathsgod/light-entity": 20,
-        "mathsgod/php-linq": 20
+        "mathsgod/light-entity": 20
     },
     "prefer-stable": false,
     "prefer-lowest": false,

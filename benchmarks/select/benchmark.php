@@ -21,7 +21,7 @@ function encodeRows(string $library, array $rows): string {
 }
 
 function connection(): PDO {
-    return new PDO(getenv('BENCH_DSN') ?: 'mysql:host=127.0.0.1;port=33388;dbname=php_entity_select_bench;charset=utf8mb4', 'root', 'select_bench', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false, PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true]);
+    return new PDO(getenv('BENCH_DSN') ?: 'mysql:host=127.0.0.1;port=33388;dbname=php_entity_select_bench;charset=utf8mb4', 'root', 'select_bench', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false, (PHP_VERSION_ID >= 80400 ? Pdo\Mysql::ATTR_USE_BUFFERED_QUERY : PDO::MYSQL_ATTR_USE_BUFFERED_QUERY) => true]);
 }
 function fetchRows(string $library, mixed $client): array {
     if ($library === 'light-db') {
@@ -147,7 +147,7 @@ foreach (['cold', 'warm'] as $mode) foreach (['laminas', 'php-entity', 'light-db
 }
 $pdo = connection();
 $packages = [];
-foreach (['laminas/laminas-db', 'mathsgod/light-entity', 'mathsgod/php-linq', 'mathsgod/light-db'] as $package) {
+foreach (['laminas/laminas-db', 'mathsgod/light-entity', 'mathsgod/light-linq', 'mathsgod/light-db'] as $package) {
     $packages[$package] = ['version' => Composer\InstalledVersions::getPrettyVersion($package), 'reference' => Composer\InstalledVersions::getReference($package)];
 }
 file_put_contents(__DIR__ . '/results.json', json_encode(['workload' => 'select-to-json', 'php' => PHP_VERSION, 'mysql' => $pdo->query('SELECT VERSION()')->fetchColumn(), 'packages' => $packages, 'created_at' => gmdate(DATE_ATOM), 'iterations' => $iterations, 'record_count' => $recordCount, 'summary' => $summary, 'samples' => $samples], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");
