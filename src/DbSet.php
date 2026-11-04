@@ -24,10 +24,12 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     /** Start a composable SQL query on an unfiltered entity set. */
     public function fromSqlRaw(string $sql, array $parameters = []): self
     {
-        if (!$this->root || !$this->query->expression() instanceof \Light\Linq\Expression\SourceExpression) {
+        if (!$this->root || !($this->query->expression() instanceof \Light\Linq\Expression\SourceExpression || $this->query->expression() instanceof \Light\Entity\Sql\EntityQuerySourceExpression)) {
             throw new \LogicException('fromSqlRaw() requires the root DbSet; apply it before query operators.');
         }
-        $query = new Queryable($this->query->provider(), new \Light\Entity\Sql\RawSqlSourceExpression($sql, $parameters));
+        $source = $this->context->querySource($this->mapping, new \Light\Entity\Sql\RawSqlSourceExpression($sql, $parameters));
+        $source = QueryFilterRewriter::ignore($source, QueryFilterRewriter::ignored($this->query->expression()));
+        $query = new Queryable($this->query->provider(), $source);
         return new self($this->context, $this->mapping, $query, false, $this->includes, trackingBehavior: $this->trackingBehavior);
     }
 
@@ -39,6 +41,13 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         }
         $paths = array_values(array_unique([...$this->includes, $path]));
         return new self($this->context, $this->mapping, $this->query, $this->root, $paths, $this->loaded, $this->trackingBehavior);
+    }
+
+    /** Disable all filters (null) or selected names for this query, without changing the context. */
+    public function ignoreQueryFilters(?array $names = null): self
+    {
+        $query = new Queryable($this->query->provider(), QueryFilterRewriter::ignore($this->query->expression(), $names));
+        return new self($this->context, $this->mapping, $query, $this->root, $this->includes, trackingBehavior: $this->trackingBehavior);
     }
 
     public function asNoTracking(): self
@@ -213,7 +222,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
             $this->context->validateIncludes($this->mapping, $this->includes);
             $entity = $this->context->materialize($this->mapping, $this->query->first($predicate === null ? null : $this->mapping->convertPredicate($predicate)), $tracking);
         }
-        $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking);
+        $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
         return $entity;
     }
 
@@ -228,9 +237,9 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         }
         $key = $this->mapping->normalizeKey($key);
         $tracking = $this->trackingMode();
-        $tracked = $tracking === QueryTrackingBehavior::TrackAll ? $this->context->tracked($this->mapping, $key) : null;
+        $tracked = $tracking === QueryTrackingBehavior::TrackAll && !$this->context->hasQueryFilters($this->mapping) ? $this->context->tracked($this->mapping, $key) : null;
         if ($tracked !== null) {
-            $this->context->loadIncludes($this->mapping, [$tracked], $this->includes, $tracking);
+            $this->context->loadIncludes($this->mapping, [$tracked], $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
             return $tracked;
         }
         $query = $this->withTracking($tracking);
@@ -285,24 +294,26 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         $tracking = $this->trackingMode();
         $this->context->validateIncludes($this->mapping, $this->includes);
         if ($this->loaded !== null) {
-            $this->context->loadIncludes($this->mapping, $this->loaded, $this->includes, $tracking);
+            $this->context->loadIncludes($this->mapping, $this->loaded, $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
             yield from $this->loaded;
         } elseif ($tracking === QueryTrackingBehavior::NoTracking && $this->includes === []) {
             yield from $this->context->streamNoTrackingEntities($this->mapping, $this->query);
         } elseif ($tracking === QueryTrackingBehavior::NoTracking
             && ($entities = $this->context->fetchNoTrackingEntities($this->mapping, $this->query)) !== null) {
-            $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking);
+            $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
             yield from $entities;
         } elseif ($this->includes !== []) {
             $entities = [];
             foreach ($this->query as $row) {
                 $entities[] = $this->context->materialize($this->mapping, $row, $tracking);
             }
-            $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking);
+            $this->context->loadIncludes($this->mapping, $entities, $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
             yield from $entities;
         } else {
             foreach ($this->query as $row) {
-                yield $this->context->materialize($this->mapping, $row, $tracking);
+                $entity = $this->context->materialize($this->mapping, $row, $tracking);
+                $this->context->loadIncludes($this->mapping, [$entity], [], $tracking, QueryFilterRewriter::ignored($this->query->expression()));
+                yield $entity;
             }
         }
     }
@@ -326,7 +337,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         $result = $query->$method($this->loaded === null && $predicate !== null ? $this->mapping->convertPredicate($predicate) : $predicate);
         if ($result === null) return $default;
         $entity = $this->loaded === null ? $this->context->materialize($this->mapping, $result, $tracking) : $result;
-        $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking);
+        $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
         return $entity;
     }
 

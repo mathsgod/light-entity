@@ -18,6 +18,8 @@ class DbContext
     private SqlFunctionRegistry $functions;
     private RelationshipResolver $relationships;
     private IncludeLoader $includeLoader;
+    private ?ModelBuilder $modelBuilder = null;
+    private bool $buildingModel = false;
 
     /** @param iterable<EntityMapping> $mappings @param iterable<SaveChangesInterceptor> $interceptors */
     public function __construct(PDO $pdo, ?SqlDialect $dialect = null, iterable $mappings = [], iterable $interceptors = [])
@@ -32,7 +34,7 @@ class DbContext
         $this->functions = new SqlFunctionRegistry();
         $this->changeTracker = new ChangeTracker($this);
         $this->model = new Model(new \Light\Entity\Schema\SchemaReader($pdo), $mappings);
-        $this->provider = new SqlQueryProvider($pdo, $dialect);
+        $this->provider = new SqlQueryProvider($pdo, $dialect, fn ($expression) => $this->prepareQuery($expression));
         $this->relationships = new RelationshipResolver(new \Light\Entity\Schema\SchemaReader($pdo), $this->model);
         $this->includeLoader = new IncludeLoader($this, $pdo, $dialect, $this->relationships);
         $this->saveExecutor = new SaveChangesExecutor($this, $this->changeTracker, $this->database, $dialect, fn () => $this->includeLoader->clear());
@@ -42,8 +44,73 @@ class DbContext
     /** @template T of object @param class-string<T> $class @return DbSet<T> */
     public function set(string $class, ?string $table = null): DbSet
     {
+        $this->ensureModelCreated();
         $mapping = $this->model->getEntityType($class, $table);
-        return new DbSet($this, $mapping, Queryable::from($this->provider, $mapping->table));
+        return new DbSet($this, $mapping, $this->entityQuery($mapping));
+    }
+
+    /** Runs lazily after the derived context has finished construction. */
+    protected function onModelCreating(ModelBuilder $builder): void {}
+
+    private function ensureModelCreated(): void
+    {
+        if ($this->modelBuilder !== null) { return; }
+        if ($this->buildingModel) { throw new \LogicException('Do not execute queries inside onModelCreating().'); }
+        $this->buildingModel = true;
+        try {
+            $builder = new ModelBuilder();
+            $this->onModelCreating($builder);
+            $builder->seal();
+            $this->modelBuilder = $builder;
+        } finally { $this->buildingModel = false; }
+    }
+
+    /** @internal */
+    public function hasQueryFilters(EntityMapping $mapping): bool
+    {
+        $this->ensureModelCreated();
+        return $this->modelBuilder->filters($mapping->class) !== [];
+    }
+
+    /** @internal */
+    public function entityQuery(EntityMapping $mapping): Queryable
+    {
+        $source = new \Light\Linq\Expression\SourceExpression($mapping->table);
+        return new Queryable($this->provider, $this->querySource($mapping, $source));
+    }
+
+    /** @internal */
+    public function querySource(EntityMapping $mapping, \Light\Linq\Expression\Expression $source): \Light\Linq\Expression\Expression
+    {
+        $this->ensureModelCreated();
+        return $this->modelBuilder->hasFilters()
+            ? new \Light\Entity\Sql\EntityQuerySourceExpression($mapping, $source) : $source;
+    }
+
+    private function prepareQuery(\Light\Linq\Expression\Expression $expression): \Light\Linq\Expression\Expression
+    {
+        $this->ensureModelCreated();
+        if (!$this->modelBuilder->hasFilters()) { return $expression; }
+        return QueryFilterRewriter::rewrite($expression, function (\Light\Entity\Sql\EntityQuerySourceExpression $source) {
+            $query = new Queryable($this->provider, $source->source);
+            foreach ($this->modelBuilder->filters($source->mapping->class) as $name => $filter) {
+                if ($source->ignoredFilters === null || in_array($name, $source->ignoredFilters, true)) { continue; }
+                $predicate = $filter instanceof \Closure ? $filter($this) : $filter;
+                if (is_array($predicate)) { $predicate = WhereFilter::parse($source->mapping->convertFilter($predicate)); }
+                elseif ($predicate instanceof \Light\Linq\Expression\ValueExpression) { $predicate = $source->mapping->convertPredicate($predicate); }
+                else { throw new \LogicException('A query filter must return a condition map or ValueExpression.'); }
+                $query = $query->where($predicate);
+            }
+            return $query->expression();
+        });
+    }
+
+    /** Apply target-entity filters to IncludeLoader's collation-aware batch SQL. @internal */
+    public function compileFilteredInclude(EntityMapping $mapping, string $sql, array $parameters, ?array $ignoredFilters): \Light\Entity\Sql\CompiledQuery
+    {
+        if (!$this->hasQueryFilters($mapping)) { return new \Light\Entity\Sql\CompiledQuery($sql, $parameters); }
+        $source = $this->querySource($mapping, new \Light\Entity\Sql\RawSqlSourceExpression($sql, $parameters));
+        return $this->provider->compile(QueryFilterRewriter::ignore($source, $ignoredFilters));
     }
 
     public function registerFunction(string $name, ?string $schema = null, ?int $parameterCount = null): void
@@ -64,17 +131,18 @@ class DbContext
     }
 
     /** @internal */
-    public function related(Entity $entity, EntityMapping $source, string $name, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll): mixed
+    public function related(Entity $entity, EntityMapping $source, string $name, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll, ?array $ignoredFilters = []): mixed
     {
         $relation = $this->relationships->resolve($source, $name);
         $mapping = $relation['mapping'];
-        $cached = $this->includeLoader->cached($entity, $name, $relation, $tracking);
+        $cached = $this->includeLoader->cached($entity, $name, $relation, $tracking, $ignoredFilters);
         if ($cached !== null) {
             return $relation['many']
-                ? new DbSet($this, $mapping, $this->relationshipQuery($entity, $relation), false, [], $cached, $tracking)
+                ? new DbSet($this, $mapping, $this->relationshipQuery($entity, $relation, $ignoredFilters), false, [], $cached, $tracking)
                 : ($cached[0] ?? null);
         }
-        $set = new DbSet($this, $mapping, Queryable::from($this->provider, $mapping->table), trackingBehavior: $tracking);
+        $set = new DbSet($this, $mapping, $this->entityQuery($mapping), trackingBehavior: $tracking);
+        $set = $set->ignoreQueryFilters($ignoredFilters);
         foreach ($relation['local'] as $i => $column) {
             $value = $entity->$column ?? null;
             if ($value === null && !$relation['many']) { return null; }
@@ -94,14 +162,18 @@ class DbContext
     }
 
     /** @internal */
-    public function loadIncludes(EntityMapping $mapping, array $entities, array $paths, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll): void
+    public function loadIncludes(EntityMapping $mapping, array $entities, array $paths, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll, ?array $ignoredFilters = []): void
     {
-        $this->includeLoader->load($mapping, $entities, $paths, $tracking);
+        foreach ($entities as $entity) {
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, $tracking, $ignoredFilters); }
+        }
+        $this->includeLoader->load($mapping, $entities, $paths, $tracking, $ignoredFilters);
     }
 
-    private function relationshipQuery(object $entity, array $relation): Queryable
+    private function relationshipQuery(object $entity, array $relation, ?array $ignoredFilters): Queryable
     {
-        $query = Queryable::from($this->provider, $relation['mapping']->table);
+        $base = $this->entityQuery($relation['mapping']);
+        $query = new Queryable($this->provider, QueryFilterRewriter::ignore($base->expression(), $ignoredFilters));
         foreach ($relation['local'] as $i => $column) {
             $value = $entity->$column ?? null;
             if ($value === null) { return $query->take(0); }
@@ -205,7 +277,9 @@ class DbContext
             throw new \LogicException('Streaming requires the context query provider.');
         }
         foreach ($this->provider->streamRows($query->expression()) as $row) {
-            yield $this->materialize($mapping, $row, QueryTrackingBehavior::NoTracking);
+            $entity = $this->materialize($mapping, $row, QueryTrackingBehavior::NoTracking);
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking, QueryFilterRewriter::ignored($query->expression())); }
+            yield $entity;
         }
     }
 
@@ -220,7 +294,7 @@ class DbContext
             return null;
         }
         foreach ($entities as $entity) {
-            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking); }
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking, QueryFilterRewriter::ignored($query->expression())); }
             if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
         }
         return $entities;

@@ -14,15 +14,17 @@ use Light\Entity\Sql\SqlQueryCompiler;
 final readonly class SqlQueryProvider implements IQueryProvider
 {
     private SqlQueryCompiler $compiler;
+    private ?\Closure $prepareQuery;
 
-    public function __construct(private PDO $pdo, SqlDialect $dialect)
+    public function __construct(private PDO $pdo, SqlDialect $dialect, ?callable $prepareQuery = null)
     {
         $this->compiler = new SqlQueryCompiler($dialect);
+        $this->prepareQuery = $prepareQuery === null ? null : \Closure::fromCallable($prepareQuery);
     }
 
     public function compile(Expression $expression): CompiledQuery
     {
-        return $this->compiler->compile($expression);
+        return $this->compiler->compile($this->prepare($expression));
     }
 
     public function execute(Expression $expression): mixed
@@ -49,7 +51,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
     /** @internal null values selects DELETE. */
     public function executeModification(Expression $expression, ?array $values = null): int
     {
-        $statement = $this->executeStatement($this->compiler->compileModification($expression, $values));
+        $statement = $this->executeStatement($this->compiler->compileModification($this->prepare($expression), $values));
         try {
             return $statement->rowCount();
         } finally {
@@ -95,6 +97,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
             || $this->pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES)) {
             return null;
         }
+        $expression = $this->prepare($expression);
         $source = $expression;
         while ($source instanceof \Light\Linq\Expression\MethodCallExpression) {
             if (!in_array($source->method, ['where', 'orderBy', 'thenBy', 'skip', 'take'], true)) {
@@ -105,7 +108,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
         if (!$source instanceof \Light\Linq\Expression\SourceExpression || $source->name !== $mapping->table) {
             return null; // Raw SQL may change value types; retain schema conversions.
         }
-        $query = $this->compile($expression);
+        $query = $this->compiler->compile($expression);
         if ($query->resultMode !== 'rows') {
             return null;
         }
@@ -150,6 +153,11 @@ final readonly class SqlQueryProvider implements IQueryProvider
         } finally {
             $statement->closeCursor();
         }
+    }
+
+    private function prepare(Expression $expression): Expression
+    {
+        return $this->prepareQuery === null ? $expression : ($this->prepareQuery)($expression);
     }
 
     private function executeStatement(CompiledQuery $query): \PDOStatement

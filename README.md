@@ -1126,3 +1126,60 @@ fetch settings retain the general conversion path. Typed entities and SQLite
 continue to use ordinary hydration. `foreach` keeps the streaming path; requesting
 an array intentionally materializes the result. Partial mappings still validate
 missing columns and ignore extra columns through the existing fallback.
+
+### ModelBuilder and global query filters
+
+Override `onModelCreating()` to configure named predicates for an entity type:
+
+```php
+use Light\Entity\{DbContext, ModelBuilder};
+use Light\Linq\Expr;
+
+class AppDbContext extends DbContext
+{
+    public int $tenantId = 1;
+
+    protected function onModelCreating(ModelBuilder $builder): void
+    {
+        $builder->entity(User::class)
+            ->hasQueryFilter('softDelete', Expr::eq(Expr::field('is_deleted'), 0))
+            ->hasQueryFilter('tenant', fn (self $context) => ['tenant_id' => $context->tenantId]);
+    }
+}
+
+$db = new AppDbContext($pdo);
+$users = $db->set(User::class)->asNoTracking()->toArray();
+$includingDeleted = $db->set(User::class)->ignoreQueryFilters(['softDelete'])->toArray();
+$all = $db->set(User::class)->ignoreQueryFilters()->toArray();
+```
+
+The hook runs lazily once per context after the derived constructor has finished.
+Configuration is context-local; completed builders reject further mutation. A
+failed hook can be retried without publishing partial configuration. Entity schema
+mapping remains lazy and accepts existing constructor-supplied mappings.
+
+All filters are named. Reusing a name replaces its definition. Predicates may be
+ValueExpressions, condition maps or callbacks returning either. Callbacks receive
+the executing context immediately before SQL compilation, allowing current tenant
+values to be bound without freezing them into shared metadata. Converter rules
+apply to model-value constants. Query filters do not automatically implement soft
+deletion; application code must set the deletion flag separately.
+
+Filters apply before pagination and affect entity reads, tracking/no-tracking,
+streaming, terminal operators, projections/aggregates, composable raw SQL,
+join/set-operation operands and executeUpdate/executeDelete. Explicit joins use
+each operand DbSet's filter scope. Raw row queries created independently of a
+DbSet and DatabaseFacade raw SQL do not carry entity filter metadata. saveChanges
+persists explicitly tracked entities and does not add query filters to their writes.
+
+`ignoreQueryFilters()` returns a new DbSet. Null disables all filters; a list
+selectively disables names, repeated calls accumulate exclusions, and an empty
+list changes nothing. The scope propagates to eager and lazy relationships and
+Include caches distinguish scopes. `find()` with configured entity filters queries
+the database instead of returning a potentially hidden tracked identity directly.
+Already tracked objects can still contain unsaved values; query filters are SQL
+predicates and are not a replacement for database access controls.
+
+No-filter contexts keep ordinary table source expressions and skip filter
+rewriting. The feature is covered on SQLite and MySQL, including filtered LEFT
+JOINs, string-key Include batches, converter binding and runtime tenant changes.

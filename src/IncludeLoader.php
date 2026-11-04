@@ -40,10 +40,10 @@ final class IncludeLoader
     }
 
     /** null means not loaded; [] means loaded with no matching rows. */
-    public function cached(object $entity, string $name, array $relation, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll): ?array
+    public function cached(object $entity, string $name, array $relation, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll, ?array $ignoredFilters = []): ?array
     {
         $entry = ($this->loaded[$entity] ?? [])[$this->normalize($name)] ?? null;
-        if ($entry === null || $entry['tracking'] !== $tracking || $entry['relation'] !== $relation
+        if ($entry === null || ($entry['ignoredFilters'] ?? []) !== $ignoredFilters || $entry['tracking'] !== $tracking || $entry['relation'] !== $relation
             || $entry['key'] !== $this->key($entity, $relation['local'])) {
             return null;
         }
@@ -54,7 +54,7 @@ final class IncludeLoader
         return $entry['entities'];
     }
 
-    public function load(EntityMapping $mapping, array $entities, array $paths, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll): void
+    public function load(EntityMapping $mapping, array $entities, array $paths, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll, ?array $ignoredFilters = []): void
     {
         $this->validate($mapping, $paths);
         foreach ($this->tree($paths) as $name => $children) {
@@ -62,7 +62,7 @@ final class IncludeLoader
             $pending = [];
             $keys = [];
             foreach ($entities as $entity) {
-                if ($this->cached($entity, $name, $relation, $tracking) !== null) { continue; }
+                if ($this->cached($entity, $name, $relation, $tracking, $ignoredFilters) !== null) { continue; }
                 $key = $this->key($entity, $relation['local']);
                 $pending[] = [$entity, $key];
                 if ($key !== null) { $keys[$key] = $this->values($entity, $relation['local']); }
@@ -71,8 +71,9 @@ final class IncludeLoader
             // Keep both parameter counts and composite OR expression depth bounded.
             $batchSize = max(1, intdiv(200, count($relation['remote'])));
             foreach (array_chunk(array_values($keys), $batchSize) as $batch) {
-                foreach ($this->fetch($relation, $batch) as [$row, $match]) {
+                foreach ($this->fetch($relation, $batch, $ignoredFilters) as [$row, $match]) {
                     $target = $this->context->materialize($relation['mapping'], $row, $tracking);
+                    if ($target instanceof Entity) { $target->attachRelations($this->context, $relation['mapping'], $tracking, $ignoredFilters); }
                     $key = $match ?? $this->key($target, $relation['remote']);
                     if ($key !== null) { $groups[$key][] = $target; }
                 }
@@ -81,7 +82,7 @@ final class IncludeLoader
                 $targets = $key === null ? [] : ($groups[$key] ?? []);
                 $entries = $this->loaded[$entity] ?? [];
                 $entries[$this->normalize($name)] = [
-                    'relation' => $relation, 'key' => $key, 'tracking' => $tracking,
+                    'relation' => $relation, 'key' => $key, 'tracking' => $tracking, 'ignoredFilters' => $ignoredFilters,
                     'entities' => $targets,
                     'targetKeys' => array_map(fn ($target) => $this->key($target, $relation['remote']), $targets),
                 ];
@@ -90,16 +91,16 @@ final class IncludeLoader
             if ($children !== []) {
                 $targets = new \SplObjectStorage();
                 foreach ($entities as $entity) {
-                    foreach ($this->cached($entity, $name, $relation, $tracking) ?? [] as $target) {
+                    foreach ($this->cached($entity, $name, $relation, $tracking, $ignoredFilters) ?? [] as $target) {
                         $targets->offsetSet($target);
                     }
                 }
-                $this->load($relation['mapping'], iterator_to_array($targets, false), $children, $tracking);
+                $this->load($relation['mapping'], iterator_to_array($targets, false), $children, $tracking, $ignoredFilters);
             }
         }
     }
 
-    private function fetch(array $relation, array $keys): array
+    private function fetch(array $relation, array $keys, ?array $ignoredFilters): array
     {
         $quote = $this->dialect->quoteIdentifier(...);
         $columns = $relation['remote'];
@@ -116,8 +117,9 @@ final class IncludeLoader
                 $selects[] = 'SELECT *, '.$i.' AS '.$quote($alias).' FROM '.$quote($relation['mapping']->table).' WHERE '.$where;
                 array_push($parameters, ...$key);
             }
-            $statement = $this->pdo->prepare(implode(' UNION ALL ', $selects));
-            $statement->execute($parameters);
+            $compiled = $this->context->compileFilteredInclude($relation['mapping'], implode(' UNION ALL ', $selects), $parameters, $ignoredFilters);
+            $statement = $this->pdo->prepare($compiled->sql);
+            $statement->execute($compiled->parameters);
             $results = [];
             foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $match = serialize(array_map(strval(...), $keys[(int) $row[$alias]]));
@@ -134,8 +136,9 @@ final class IncludeLoader
             $where = implode(' OR ', array_fill(0, count($keys), $tuple));
             foreach ($keys as $key) { array_push($parameters, ...$key); }
         }
-        $statement = $this->pdo->prepare('SELECT * FROM '.$quote($relation['mapping']->table).' WHERE '.$where);
-        $statement->execute($parameters);
+        $compiled = $this->context->compileFilteredInclude($relation['mapping'], 'SELECT * FROM '.$quote($relation['mapping']->table).' WHERE '.$where, $parameters, $ignoredFilters);
+        $statement = $this->pdo->prepare($compiled->sql);
+        $statement->execute($compiled->parameters);
         return array_map(fn ($row) => [$row, null], $statement->fetchAll(PDO::FETCH_ASSOC));
     }
 

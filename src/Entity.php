@@ -11,13 +11,15 @@ abstract class Entity implements \JsonSerializable
     private ?DbContext $relationContext = null;
     private ?EntityMapping $relationMapping = null;
     private QueryTrackingBehavior $relationTracking = QueryTrackingBehavior::TrackAll;
+    private ?array $ignoredQueryFilters = [];
 
     /** @internal */
-    final public function attachRelations(DbContext $context, EntityMapping $mapping, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll): void
+    final public function attachRelations(DbContext $context, EntityMapping $mapping, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll, ?array $ignoredFilters = []): void
     {
         $this->relationContext = $context;
         $this->relationMapping = $mapping;
         $this->relationTracking = $tracking;
+        $this->ignoredQueryFilters = $ignoredFilters;
     }
 
     /** @internal Bulk initialization for validated, schema-driven native hydration. */
@@ -34,7 +36,7 @@ abstract class Entity implements \JsonSerializable
         if ($this->relationContext === null) {
             throw new \LogicException('Relationship getters require an entity attached to a DbContext.');
         }
-        return $this->relationContext->related($this, $this->relationMapping, substr($name, 3), $this->relationTracking);
+        return $this->relationContext->related($this, $this->relationMapping, substr($name, 3), $this->relationTracking, $this->ignoredQueryFilters);
     }
 
 
