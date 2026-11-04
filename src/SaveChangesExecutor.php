@@ -56,11 +56,11 @@ final class SaveChangesExecutor
                     } elseif ($changes !== []) {
                         $assignments = implode(', ', array_map(fn ($name) => $this->quote($name).' = ?', array_keys($changes)));
                         [$where, $parameters] = $this->keyWhere($mapping, $entry->originalValues);
-                        $this->database->executeSql('UPDATE '.$this->quote($mapping->table)." SET {$assignments} WHERE {$where}", [...array_values($changes), ...$parameters]);
+                        $this->database->executeSql('UPDATE '.$this->quote($mapping->table)." SET {$assignments} WHERE {$where}", [...array_values($mapping->toProviderValues($changes)), ...$parameters]);
                         $values = $this->reloadValues($mapping, $entry->originalValues);
                         ++$count;
                     }
-                    $accepted[] = [$entry, $state, $values];
+                    $accepted[] = [$entry, $state, $values, $state === EntityState::Deleted ? [] : $mapping->snapshotValues($values)];
                 }
                 $this->database->completeSaveChanges($savepoint);
                 $started = false;
@@ -105,7 +105,7 @@ final class SaveChangesExecutor
     {
         $mapping = $entry->metadata;
         $table = $this->quote($mapping->table);
-        $insert = $mapping->insertValues($entry->entity);
+        $insert = $mapping->toProviderValues($mapping->insertValues($entry->entity));
         if ($insert === []) {
             $sql = $this->database->getDbConnection()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
                 ? "INSERT INTO {$table} () VALUES ()" : "INSERT INTO {$table} DEFAULT VALUES";

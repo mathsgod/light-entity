@@ -919,3 +919,74 @@ and relationship caches are bypassed: already loaded entities remain stale,
 and a later `saveChanges()` can overwrite bulk changes. Use a fresh context or
 explicitly reload affected entities before continuing tracked work. Multiple
 bulk operations are not automatically wrapped in one transaction.
+
+## Value converters and comparers
+
+JSON columns remain strings by default. Configure conversion per property when
+an application needs an array, typed object, enum, or another model type.
+`ValueConverter` maps model values to scalar provider values and back;
+`ValueComparer` defines model equality and an independent snapshot. SQL NULL
+bypasses all callbacks in both directions. Non-scalar model values require both
+handlers, so mutable objects cannot accidentally share their original snapshot.
+
+For example, map a JSON column to a PHP object:
+
+```php
+use Light\Entity\{DbContext, Entity, EntityMapping, ValueConverter, ValueComparer};
+use Light\Entity\Schema\SchemaReader;
+
+class User extends Entity
+{
+    public ?object $settings;
+}
+
+$converter = new ValueConverter(
+    toProvider: fn (object $value) => json_encode($value, JSON_THROW_ON_ERROR),
+    fromProvider: fn (string $value) => json_decode($value, false, 512, JSON_THROW_ON_ERROR),
+);
+$comparer = new ValueComparer(
+    equals: fn (object $a, object $b) => $a == $b,
+    snapshot: fn (object $value) => json_decode(
+        json_encode($value, JSON_THROW_ON_ERROR), false, 512, JSON_THROW_ON_ERROR,
+    ),
+);
+$mapping = EntityMapping::fromSchema(
+    User::class, 'users', (new SchemaReader($pdo))->columns('users'),
+    converters: ['settings' => $converter],
+    comparers: ['settings' => $comparer],
+);
+$db = new DbContext($pdo, mappings: [$mapping]);
+
+$user = $db->set(User::class)->find(1);
+$user->settings->theme = 'dark';
+$db->saveChanges();
+```
+
+This example assumes non-null JSON object documents or SQL NULL. A typed domain
+object can use its own constructor/factory in `fromProvider`; JSON documents
+with arrays or scalar roots need callbacks accepting those shapes. For an array
+property, use associative decoding and an appropriate independent snapshot.
+Ordinary dynamic `Entity` getters still return by value, so modify an array and
+assign it back, or declare a public array property to modify offsets directly.
+
+Converters run during entity hydration (including raw SQL, streaming and includes),
+INSERT/UPDATE, and literal `executeUpdate()` assignments. Snapshots and entry
+values use model values; SQL binding uses provider values. Original-value reads
+copy snapshots so modifying an exposed object does not change tracking history.
+Snapshot callbacks run before commit; failed saves retain the original snapshot.
+
+Direct field/constant comparisons in `DbSet::where()` and entity terminal
+predicates convert constants to provider values. Array filters also support model
+operands, e.g. `where(['status' => $enum])` or
+`where(['settings' => ['eq' => $settingsObject]])`. Array-valued equality operands
+must use the explicit `eq` form. Conversion is not JSON-path translation: JSON
+comparison still follows the database's whole-column semantics.
+
+`select()`, `asQueryable()`, JOIN projections and SQL value expressions remain
+provider-level operations; their results and expression literals are not
+implicitly converted. Primary-key converters/comparers are not supported in
+this version. Conversion disables the native bulk hydration optimization for
+that mapping, ensuring every configured property passes through its converter.
+The comparer must implement equality and copying consistently; use a deep copy
+for nested mutable objects. No hash callback is required because tracking uses
+its existing identity lookup rather than hashing converted property values.

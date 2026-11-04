@@ -180,6 +180,14 @@ class DbContext
                 throw new \InvalidArgumentException('Bulk updates cannot assign primary keys or computed columns.');
             }
         }
+        if ($values !== null) {
+            foreach ($values as $name => $value) {
+                // SQL expressions already represent provider-side values.
+                if (!$value instanceof \Light\Linq\Expression\ValueExpression) {
+                    $values[$name] = $mapping->toProviderValue($name, $value);
+                }
+            }
+        }
         return $this->provider->executeModification($query->expression(), $values);
     }
 

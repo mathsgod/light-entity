@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Light\Entity;
 
 /**
- * A live view of an entity's tracking record. Value arrays are read-only copies.
+ * A live view of an entity's tracking record. Original values are independent snapshots.
  *
  * @property EntityState $state
- * @property-read array<string, scalar|null> $originalValues
- * @property-read array<string, scalar|null> $currentValues
+ * @property-read array<string, mixed> $originalValues
+ * @property-read array<string, mixed> $currentValues
  */
 final class EntityEntry
 {

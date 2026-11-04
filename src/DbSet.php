@@ -53,7 +53,9 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
 
     public function where(ValueExpression|array $predicate): self
     {
-        if (is_array($predicate)) { $predicate = WhereFilter::parse($predicate); }
+        $predicate = is_array($predicate)
+            ? WhereFilter::parse($this->mapping->convertFilter($predicate))
+            : $this->mapping->convertPredicate($predicate);
         return $this->with($this->query->where($predicate));
     }
 
@@ -183,7 +185,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
 
     public function all(ValueExpression $predicate): bool
     {
-        return $this->loaded === null ? $this->query->all($predicate)
+        return $this->loaded === null ? $this->query->all($this->mapping->convertPredicate($predicate))
             : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded')->all($predicate);
     }
     public function skip(int $count): self { return $this->with($this->query->skip($count)); }
@@ -192,7 +194,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     public function any(?ValueExpression $predicate = null): bool
     {
         return $this->loaded !== null && $predicate === null
-            ? $this->loaded !== [] : $this->query->any($predicate);
+            ? $this->loaded !== [] : $this->query->any($predicate === null ? null : $this->mapping->convertPredicate($predicate));
     }
 
     /** @return T */
@@ -203,7 +205,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
             $entity = $this->loaded[0] ?? throw new \UnderflowException('The query has no elements.');
         } else {
             $this->context->validateIncludes($this->mapping, $this->includes);
-            $entity = $this->context->materialize($this->mapping, $this->query->first($predicate), $tracking);
+            $entity = $this->context->materialize($this->mapping, $this->query->first($predicate === null ? null : $this->mapping->convertPredicate($predicate)), $tracking);
         }
         $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking);
         return $entity;
@@ -307,7 +309,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         $this->context->validateIncludes($this->mapping, $this->includes);
         $query = $this->loaded === null ? $this->query
             : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded');
-        $result = $query->$method($predicate);
+        $result = $query->$method($this->loaded === null && $predicate !== null ? $this->mapping->convertPredicate($predicate) : $predicate);
         if ($result === null) return $default;
         $entity = $this->loaded === null ? $this->context->materialize($this->mapping, $result, $tracking) : $result;
         $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking);

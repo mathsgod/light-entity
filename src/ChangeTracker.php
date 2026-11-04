@@ -70,7 +70,7 @@ final class ChangeTracker
         if (in_array($record['state'], [EntityState::Added, EntityState::Deleted], true)) {
             return $record['state'];
         }
-        return $record['forced'] || $record['mapping']->values($entity) !== $record['original']
+        return $record['forced'] || !$record['mapping']->valuesEqual($record['mapping']->values($entity), $record['original'])
             ? EntityState::Modified : EntityState::Unchanged;
     }
 
@@ -78,7 +78,7 @@ final class ChangeTracker
     public function originalValues(object $entity, EntityMapping $mapping): array
     {
         return $this->records->offsetExists($entity)
-            ? $this->records[$entity]['original'] : $mapping->values($entity);
+            ? $mapping->snapshotValues($this->records[$entity]['original']) : $mapping->snapshotValues($mapping->values($entity));
     }
 
     /** @internal */
@@ -111,7 +111,7 @@ final class ChangeTracker
         $this->knownMappings[$entity] = $mapping;
         $this->records[$entity] = [
             'mapping' => $mapping, 'state' => $state,
-            'original' => $state === EntityState::Unchanged ? $values : ($record['original'] ?? $values),
+            'original' => $state === EntityState::Unchanged ? $mapping->snapshotValues($values) : ($record['original'] ?? $mapping->snapshotValues($values)),
             'forced' => $state === EntityState::Modified,
         ];
         if ($entity instanceof Entity) { $entity->attachRelations($this->context, $mapping); }
@@ -152,10 +152,10 @@ final class ChangeTracker
         $forced = $this->records[$entry->entity]['forced'];
         foreach ($values as $name => $value) {
             $computed = ($mapping->columns[$name] ?? null)?->computed;
-            if ($computed && $value !== $original[$name]) {
+            if ($computed && !$mapping->propertyEquals($name, $value, $original[$name])) {
                 throw new \LogicException('Computed columns cannot be modified.');
             }
-            if (!$computed && !in_array($name, $mapping->keys, true) && ($forced || $value !== $original[$name])) {
+            if (!$computed && !in_array($name, $mapping->keys, true) && ($forced || !$mapping->propertyEquals($name, $value, $original[$name]))) {
                 $changes[$name] = $value;
             }
         }
@@ -175,14 +175,14 @@ final class ChangeTracker
     /** @internal Apply only after the save transaction/savepoint succeeds. */
     public function accept(array $accepted): void
     {
-        foreach ($accepted as [$entry, $state, $values]) {
+        foreach ($accepted as [$entry, $state, $values, $snapshot]) {
             if ($state === EntityState::Deleted) {
                 $this->records->offsetUnset($entry->entity);
             } else {
                 foreach ($values as $property => $value) { $entry->entity->$property = $value; }
                 $this->records[$entry->entity] = [
                     'mapping' => $entry->metadata, 'state' => EntityState::Unchanged,
-                    'original' => $values, 'forced' => false,
+                    'original' => $snapshot, 'forced' => false,
                 ];
             }
         }
