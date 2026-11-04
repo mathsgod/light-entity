@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity\Migrations;
 
-final readonly class CreateTableOperation
+final readonly class CreateTableOperation implements MigrationOperation
 {
     /** @param non-empty-list<ColumnDefinition> $columns */
     public function __construct(public string $table, public array $columns)

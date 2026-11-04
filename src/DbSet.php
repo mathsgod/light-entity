@@ -59,6 +59,12 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->with($this->query->where($predicate));
     }
 
+    /** Append a trusted SQL condition with bound positional or named provider values. */
+    public function whereRaw(string $sql, array $parameters = []): self
+    {
+        return $this->where(new \Light\Entity\Sql\RawSqlPredicateExpression($sql, $parameters));
+    }
+
     /** Raw row query for composition; results are not tracked entities. */
     public function asQueryable(): Queryable
     {

@@ -9,6 +9,8 @@ final class ColumnBuilder
     private bool $isNullable = false;
     private bool $isAutoIncrement = false;
     private bool $isPrimaryKey = false;
+    private bool $hasDefault = false;
+    private mixed $defaultValue = null;
 
     public function __construct(
         private readonly string $name,
@@ -42,9 +44,16 @@ final class ColumnBuilder
         return $this;
     }
 
+    public function defaultValue(mixed $value): self
+    {
+        $this->hasDefault = true;
+        $this->defaultValue = $value;
+        return $this;
+    }
+
     public function build(): ColumnDefinition
     {
         return new ColumnDefinition($this->name, $this->type, $this->length,
-            $this->isNullable, $this->isAutoIncrement, $this->isPrimaryKey);
+            $this->isNullable, $this->isAutoIncrement, $this->isPrimaryKey, $this->hasDefault, $this->defaultValue);
     }
 }

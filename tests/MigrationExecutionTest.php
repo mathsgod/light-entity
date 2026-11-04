@@ -103,6 +103,36 @@ class MigrationExecutionTest extends TestCase
         }
     }
 
+    public function testAlterRenameIndexesDropAndDefaultsExecuteOnExistingData(): void
+    {
+        $pdo = $this->connection();
+        $db = new DbContext($pdo);
+        $m = new MigrationBuilder();
+        $m->createTable('evolving', function (TableBuilder $t) { $t->integer('id')->primaryKey(); $t->string('name', 60); });
+        $db->database->executeMigration($m);
+        $db->database->executeSql('INSERT INTO evolving (id,name) VALUES (?,?)', [1,'Ada']);
+        $default = "guest'\\name";
+        $m = new MigrationBuilder();
+        $m->addColumn('evolving', fn (TableBuilder $t) => $t->string('nickname',100)->defaultValue($default))
+            ->renameColumn('evolving', 'nickname', 'display_name')
+            ->createIndex('evolving', 'ux_evolving_name', ['name'], unique:true);
+        $db->database->executeMigration($m);
+        self::assertSame($default, $pdo->query('SELECT display_name FROM evolving WHERE id=1')->fetchColumn());
+        try { $db->database->executeSql('INSERT INTO evolving (id,name) VALUES (?,?)', [2,'Ada']); self::fail('Unique index must be enforced.'); }
+        catch (\PDOException) { self::assertSame(1, (int)$pdo->query('SELECT COUNT(*) FROM evolving')->fetchColumn()); }
+        $m = new MigrationBuilder();
+        $m->dropIndex('evolving','ux_evolving_name')->dropColumn('evolving','display_name');
+        $db->database->executeMigration($m);
+        $db->database->executeSql('INSERT INTO evolving (id,name) VALUES (?,?)', [2,'Ada']);
+        self::assertSame(2, (int)$pdo->query('SELECT COUNT(*) FROM evolving')->fetchColumn());
+        self::assertSame('Ada', $pdo->query('SELECT name FROM evolving WHERE id=1')->fetchColumn());
+        $m = new MigrationBuilder();
+        $m->dropTable('evolving');
+        $db->database->executeMigration($m);
+        $this->expectException(\PDOException::class);
+        $pdo->query('SELECT * FROM evolving');
+    }
+
     public function testEmptyMigrationDoesNothing(): void
     {
         $db = new DbContext($this->connection());

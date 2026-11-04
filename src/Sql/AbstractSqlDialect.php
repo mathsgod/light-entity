@@ -260,6 +260,8 @@ abstract class AbstractSqlDialect implements SqlDialect
                 $expression->operand === null ? '*' : $this->value($expression->operand)).')',
             $expression instanceof FieldExpression => $this->quoteIdentifier($expression->path),
             $expression instanceof NotExpression => '(NOT '.$this->value($expression->operand).')',
+            // Newline keeps a trailing line comment inside the condition's parentheses.
+            $expression instanceof RawSqlPredicateExpression => '('.(new RawSqlParser())->compile($expression, $this->parameter(...), $this)."\n)",
             $expression instanceof ConstantExpression => $this->parameter($expression->value),
             $expression instanceof FunctionExpression => $this->functionName($expression->definition)
                 .'('.implode(', ', array_map($this->value(...), $expression->arguments)).')',

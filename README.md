@@ -377,7 +377,7 @@ and null keys, composite join keys, self/chained joins, filtered and paged
 sources, projections, aggregates, schema discovery and DbSet tracking. It does
 not run the entire SQLite persistence suite against MySQL.
 
-## Create tables with MigrationBuilder
+## Schema changes with MigrationBuilder
 
 The builder collects immutable schema operations; constructing it does not
 access the database. The following callback API is supported for MySQL and
@@ -425,10 +425,11 @@ For offline SQL generation, use
 and `Light\Entity\Sql`, then call `generate($migration)` to obtain a list of SQL
 statements. PostgreSQL and SQL Server DDL generation are not implemented yet.
 
-This first version supports CREATE TABLE only. It does not implement ALTER or
-DROP, model snapshots, automatic schema comparison, migration history, or
-Up/Down execution. Re-executing the same CREATE fails rather than silently
-skipping it. Operations do not automatically start a transaction; a later
+The builder also supports `addColumn()`, `alterColumn()`, `renameColumn()`,
+`dropColumn()`, `dropTable()`, `createIndex()` / `dropIndex()`, and
+`addForeignKey()` / `dropForeignKey()`. It does not implement model snapshots,
+automatic schema comparison, migration history, or Up/Down execution.
+Re-executing the same CREATE fails rather than silently skipping it. Operations do not automatically start a transaction; a later
 failure may leave earlier tables created. MySQL execution rejects active
 transactions because DDL would implicitly commit them. Schema changes do not
 refresh existing cached mappings; use a new context when changing mapped
@@ -437,6 +438,62 @@ schemas.
 `composer test:mysql` also runs the migration contract against Docker MySQL 8,
 including preview, schema discovery, generated/manual keys, ORM persistence,
 identifier escaping and the transaction guard.
+
+
+### Alter columns, indexes and foreign keys
+
+```php
+$migration = new MigrationBuilder();
+$migration->addColumn('users', fn (TableBuilder $t) =>
+    $t->string('nickname', 100)->nullable()->defaultValue(null));
+$migration->alterColumn('users', fn (TableBuilder $t) =>
+    $t->string('nickname', 200)->nullable()); // MySQL: complete replacement definition
+$migration->renameColumn('users', 'nickname', 'display_name');
+$migration->createIndex('users', 'ix_display_name', ['display_name'], unique: true);
+$migration->dropIndex('users', 'ix_display_name');
+$migration->addForeignKey('orders', 'fk_orders_user', ['user_id'], 'users', ['id'],
+    onDelete: 'CASCADE', onUpdate: 'NO ACTION');
+$migration->dropForeignKey('orders', 'fk_orders_user');
+$migration->dropColumn('users', 'display_name');
+$migration->dropTable('obsolete_table');
+
+$script = $db->database->generateMigrationScript($migration);
+$db->database->executeMigration($migration);
+```
+
+Operations execute in the order queued; prepare referenced tables/columns before
+adding indexes or foreign keys. Each add/alter callback defines exactly one
+column with the existing `integer()` / `string()` API. `defaultValue()` accepts
+scalar literals or null; SQL expressions are not interpreted. An explicit null
+default requires `nullable()`. Defaults also work in `createTable()`.
+
+MySQL `alterColumn()` uses MODIFY COLUMN: supply the entire supported definition,
+including nullability and any default to retain. An omitted default is removed;
+this is not a patch of the existing metadata. Adding or altering primary-key /
+auto-increment definitions is not supported; create those in `createTable()`.
+Other database-specific column facets (generated expressions, unsigned, comments,
+etc.) are not represented by these builders and must not be assumed preserved
+by MODIFY. Numeric/string types remain limited to the existing integer/VARCHAR
+builder types.
+
+Indexes accept ordered column lists, including composite and unique indexes.
+Foreign keys accept matching ordered child/principal column lists and the actions
+`NO ACTION`, `RESTRICT`, `CASCADE`, `SET NULL` for delete/update. The database
+validates compatible types, referenced keys, existing rows, nullability, and
+whether an index/column is still needed by a constraint. Drop dependent
+constraints/indexes first when necessary.
+
+| Operation | MySQL 8 | SQLite |
+| --- | --- | --- |
+| Add / rename / drop column | Supported | Supported by native SQLite DDL (DROP COLUMN needs SQLite 3.35+) |
+| Alter column definition | Supported | Rejected; requires rebuilding the table |
+| Create / drop index, drop table | Supported | Supported |
+| Add / drop foreign key on an existing table | Supported | Rejected; requires rebuilding the table |
+
+Unsupported operations fail during SQL generation before any statement in that
+migration executes. Database execution failures can still leave earlier MySQL
+DDL applied. No SQLite table rebuild is attempted, and no existing mapping cache
+is refreshed automatically.
 
 ## FK relationship getters
 
@@ -595,6 +652,44 @@ registration is optional; use `registerFunction()` for a shared schema or early
 argument-count validation. Mappings are context-scoped and do not create the database function.
 See [Scalar SQL Functions](docs/sql-functions.md) for wrappers, parameter types,
 dialect differences, and limitations.
+
+## Raw SQL conditions
+
+Use `whereRaw()` for a database-specific condition or subquery without repeating
+SELECT or the mapped table name:
+
+```php
+$users = $db->set(User::class)
+    ->whereRaw('BINARY name = ?', [$name]) // MySQL-specific comparison
+    ->where(['status' => 'active'])
+    ->orderBy(Expr::field('id'))
+    ->take(20)
+    ->toArray();
+
+$users = $db->set(User::class)->whereRaw(
+    'user_id NOT IN (SELECT user_id FROM UserRole WHERE role = :role)',
+    ['role' => 'Administrators'],
+);
+```
+
+Each condition is wrapped in parentheses and combined with other `where()` /
+`whereRaw()` calls using AND; the original DbSet is unchanged. It also works
+with `fromSqlRaw()`, tracking/no-tracking, terminal queries, and supported bulk
+updates/deletes. Pass only the condition, not a WHERE keyword or full SELECT.
+
+Values use a positional `?` list or named `:name` map, with repeated named
+parameters allowed. Markers are renamed into the same parameter namespace as
+ordinary predicates and raw sources. Quoted literals and comments do not bind
+parameters. Missing, extra, mixed-style parameters, unbalanced parentheses,
+unterminated quotes/comments and statement separators are rejected before SQL
+execution. A trailing line comment does not swallow the enclosing parentheses.
+
+The SQL fragment is trusted application code; this API does not sanitize SQL or
+make arbitrary user-provided syntax safe. Bind values separately. Identifiers,
+SQL functions, collation and subquery semantics remain database-specific; names
+inside the fragment are not automatically quoted, qualified or rewritten.
+Parameters are provider values and bypass model ValueConverters. This is a raw
+predicate escape hatch, not structured LINQ subquery translation.
 
 ## Composable raw SQL
 

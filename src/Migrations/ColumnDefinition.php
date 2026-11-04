@@ -14,6 +14,8 @@ final readonly class ColumnDefinition
         public bool $nullable,
         public bool $autoIncrement,
         public bool $primaryKey,
+        public bool $hasDefault = false,
+        public mixed $defaultValue = null,
     ) {
         if ($name === '' || str_contains($name, "\0")) {
             throw new \InvalidArgumentException('Column names must be non-empty and contain no NUL bytes.');
@@ -22,6 +24,12 @@ final readonly class ColumnDefinition
             || ($type === 'integer' && $length !== null)
             || ($type === 'string' && ($length === null || $length < 1 || $length > 65535))) {
             throw new \InvalidArgumentException('Use integer or string with a length between 1 and 65535.');
+        }
+        if ($hasDefault && ($defaultValue !== null && !is_scalar($defaultValue)
+            || is_float($defaultValue) && !is_finite($defaultValue)
+            || $defaultValue === null && !$nullable
+            || $autoIncrement)) {
+            throw new \InvalidArgumentException('Invalid column default.');
         }
         if ($primaryKey && $nullable) {
             throw new \InvalidArgumentException('A primary-key column cannot be nullable.');
