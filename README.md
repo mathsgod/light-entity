@@ -2,7 +2,7 @@
 
 A PHP 8.3+ database-first ORM built on PDO and `mathsgod/light-linq`, inspired by
 Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
-Independent of light-db and Laminas DB. This is a PHP implementation with its own
+This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
 ## 1.0 support scope and compatibility
