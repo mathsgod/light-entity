@@ -1,6 +1,69 @@
 # light-entity
 
-An experimental PHP 8.3+ database-first ORM built on PDO and `mathsgod/light-linq`. Independent of light-db and Laminas DB.
+A PHP 8.3+ database-first ORM built on PDO and `mathsgod/light-linq`, inspired by
+Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
+Independent of light-db and Laminas DB. This is a PHP implementation with its own
+API and supported feature set, not an EF Core API compatibility layer.
+
+## 1.0 support scope and compatibility
+
+The following defines the support contract for the 1.0 release and subsequent
+1.x versions; it does not indicate that a release has already been published.
+
+| Component | 1.0 support commitment |
+| --- | --- |
+| Runtime | PHP 8.3 or later, PDO, and the corresponding PDO database driver |
+| MySQL | MySQL 8.0 is the integration-test baseline for schema discovery, queries, tracking, persistence, relationships and supported DDL |
+| SQLite | SQLite 3.35+ with `pdo_sqlite` for schema discovery, queries, tracking, persistence, relationships and supported native DDL |
+| MariaDB | MySQL-driver compatibility is implemented, but there is no dedicated MariaDB integration suite; it is outside the guaranteed 1.0 support baseline |
+| PostgreSQL / SQL Server | SQL dialects cover documented query translation; full ORM/schema discovery and DDL support are outside the 1.0 support baseline |
+
+Database support is limited to the operations documented here. For example,
+SQLite foreign-key changes that require rebuilding tables are rejected. A SQL
+dialect's presence does not imply end-to-end ORM support for that database.
+
+The supported API includes documented entity mapping, DbContext/DbSet queries,
+identity and snapshot tracking, `saveChanges()`, DatabaseFacade transactions,
+FK relationship getters and Include, converters/comparers, entity entries,
+save interceptors, global query filters, raw SQL, bulk writes and MigrationBuilder
+operations. Use a short-lived context for each unit of work.
+
+### Compatibility policy for 1.x
+
+- Documented public APIs and behavior form the compatibility contract. Breaking
+  changes to those APIs, mapping conventions or supported semantics require a
+  new major version.
+- Minor releases may add APIs, query operators and database capabilities while
+  preserving existing supported behavior. Patch releases provide compatible
+  fixes. Incorrect behavior may be corrected to match the documented contract.
+- Private/protected implementation details, APIs marked `@internal`, generated
+  SQL formatting, query counts and benchmark results are not compatibility
+  guarantees. Documented extension hooks such as `onModelCreating()` remain part
+  of the public contract.
+- Exceptions documented for unsupported operations are intentional boundaries;
+  application code should not depend on incidental support outside this scope.
+
+### Deliberate limitations in 1.0
+
+- No automatic optimistic-concurrency tokens or conflict detection: tracked
+  updates/deletes match primary keys. Global query filters do not add predicates
+  to `saveChanges()` writes and are not database access controls.
+- No migration version/history store, automatic schema diff, or managed Up/Down
+  runner. MigrationBuilder generates and executes explicit operations; MySQL DDL
+  can implicitly commit and is not made atomic by the ORM.
+- No custom entity property-to-column aliases, primary-key converters/comparers,
+  or asynchronous database I/O.
+- Relationship loading uses database FK metadata and explicit getter overrides;
+  it is not a promise of EF Core's full relationship persistence semantics.
+- A successful `saveChanges()` inside a facade transaction accepts PHP snapshots
+  before the outer commit. A full outer rollback does not rewind entities or
+  tracking state: discard that context afterwards.
+- Raw SQL and immediate bulk writes do not refresh tracked objects. Schema
+  changes require a new context to refresh cached metadata.
+
+See the feature sections below for query, relationship, streaming and DDL
+restrictions. These boundaries do not prevent adding compatible capabilities
+in later 1.x releases.
 
 ## Runtime automatic mapping
 
@@ -9,7 +72,6 @@ The first `set()` or `model->getEntityType()` for an entity reads the database s
 ```php
 use Light\Entity\DbContext;
 use Light\Entity\Entity;
-use Light\Linq\Expr;
 
 // Defaults to the table "users". No manually declared properties required.
 final class User extends Entity {}
@@ -18,7 +80,7 @@ $pdo = new PDO('mysql:host=localhost;dbname=app;charset=utf8mb4', 'username', 'p
 $db = new DbContext($pdo);
 $users = $db->set(User::class);
 
-$user = $users->where(Expr::eq(Expr::field('id'), 1))->first();
+$user = $users->where(['id' => 1])->first();
 $user->name = 'Peter';
 $db->saveChanges();
 
@@ -124,11 +186,28 @@ assigned to the entity only after a successful save.
 
 The test suite uses PHPUnit 12.5 and requires PHP 8.3 or later.
 
+GitHub Actions runs the ordinary SQLite suite and the MySQL 8 integration suite
+on PHP 8.3, 8.4 and 8.5 for pushes and pull requests. The workflow can also be
+started manually. CI installs the required PDO drivers and fails on skipped
+tests. PHP 8.3 explicitly excludes the one serialization test that requires
+PHP 8.4 property hooks; PHP 8.4 and 8.5 run it. See
+[the test workflow](.github/workflows/tests.yml).
+
 Run `composer install` to install dependencies, including `mathsgod/light-linq` 1.x.
 
-Run `composer test` or `vendor/bin/phpunit` after `composer install`. Database integration tests require `pdo_sqlite` and are marked skipped if it is unavailable; install the extension to run the full suite. PHPUnit tests cover runtime discovery, types, defaults, computed columns, identity tracking, persistence and rollback/retry with SQLite. MySQL/MariaDB discovery uses INFORMATION_SCHEMA.COLUMNS. The Docker MySQL 8 JOIN suite covers live queries, schema discovery and tracking; the full persistence/defaults suite runs against SQLite. The MySQL suite also covers composite-key persistence, tracking, migrations and rollback/retry, including auto-increment key components.
+Run `composer test` or `vendor/bin/phpunit` after `composer install`. The ordinary
+suite combines database-independent tests with SQLite-backed tests covering
+runtime discovery, types, defaults, computed columns, identity tracking,
+persistence, transactions, relationships and rollback/retry. SQLite-backed tests
+are skipped if `pdo_sqlite` is unavailable; a successful command with skipped
+tests is not a full-suite validation.
 
-No relationship loading, migration version/history management, custom entity column aliases, optimistic concurrency, async operations yet. Updates/deletes match only the primary key. Use a short-lived context for each unit of work.
+Run `composer test:mysql` for the separate Docker MySQL 8 integration suite.
+It covers queries/joins, schema discovery, tracking, persistence, transactions,
+relationships/Include, global query filters, converters, raw SQL, bulk writes and
+migrations. Both suites are required to validate the 1.0 database support scope;
+the MySQL suite does not execute every SQLite test against MySQL. See
+[PHPUnit with Docker MySQL 8](#phpunit-with-docker-mysql-8) for setup and isolation.
 
 ## Adding multiple entities
 
@@ -228,8 +307,9 @@ Within a facade transaction, each `saveChanges()` creates a savepoint. A failed
 save rolls back to that savepoint, leaving earlier saves and SQL operations
 intact for retry or explicit rollback. Savepoints currently support SQLite,
 MySQL/MariaDB and PostgreSQL; other drivers reject saves inside an explicit
-transaction before writing. SQLite is integration-tested; other drivers still
-need live-server validation. Nested `beginTransaction()` is rejected.
+transaction before writing. SQLite and MySQL transaction behavior is covered by
+their respective suites; MariaDB and PostgreSQL are outside the guaranteed 1.0
+support baseline. Nested `beginTransaction()` is rejected.
 
 Successful saves accept change-tracker snapshots and assign generated values
 immediately, even before the outer commit. Rolling back the outer transaction
@@ -280,7 +360,9 @@ through either method is shared with the other. Explicit constructor mappings
 are immediately available from the model without schema queries.
 
 Use a new context after schema changes to refresh metadata. This model exposes
-current entity/column mappings; relationship metadata is not implemented yet.
+current entity/column mappings. FK relationship loading and explicit getter
+overrides are handled by the relationship resolver; `IModel` does not expose a
+unified relationship metadata API. See [FK relationship getters](#fk-relationship-getters).
 
 ## JOIN queries
 
@@ -349,7 +431,7 @@ composer test:mysql
 ```
 
 This starts `mysql:8.0` on loopback port 33386, waits for readiness, runs the
-shared JOIN contract through PHPUnit using native PDO prepared statements,
+MySQL integration suite through PHPUnit using native PDO prepared statements,
 and removes the container/network on exit. MySQL data lives in a temporary
 filesystem. Each database-backed test creates a random database and drops it
 in teardown; existing databases are not modified. The ordinary `composer test`
@@ -1000,7 +1082,7 @@ Update values may be scalar, null, or supported scalar value expressions such
 as `Expr::field('other_column')`. Assignment targets must be mapped properties;
 primary keys and computed columns cannot be assigned. Empty assignments fail.
 
-The first version accepts a table source with zero or more `where()` calls.
+The 1.0 bulk-write API accepts a table source with zero or more `where()` calls.
 Ordering, pagination, raw SQL sources, includes and preloaded relationship
 collections are rejected rather than ignored. Without a `where()` condition,
 the operation affects the entire table. Joins and projections do not expose
