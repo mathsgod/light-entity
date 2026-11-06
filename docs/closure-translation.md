@@ -103,9 +103,9 @@ $db->set(Customers::class)->asEnumerable()
     ->where(fn($c) => customPhpPredicate($c));
 ```
 
-Install a compatible light-linq version containing arithmetic and
-`StringMatchExpression` support. A sibling checkout alone does not update the
-installed Composer dependency. For full syntax and provider responsibilities,
+light-entity v1.2.0 requires stable light-linq `^1.2`, including arithmetic,
+string matching, scalar, coalesce and conditional support. Update the application
+lockfile; a sibling checkout alone does not update the installed dependency. For full syntax and provider responsibilities,
 see [light-linq's closure guide](https://github.com/mathsgod/light-linq/blob/main/docs/closure-translation.md).
 
 ## Coalesce and conditional expressions

@@ -5,6 +5,13 @@ Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
 This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
+## v1.2.0
+
+Requires stable `mathsgod/light-linq:^1.2`. Adds arithmetic, string matching,
+scalar functions, coalesce and conditional query expressions. Also includes
+bound raw ordering and cross-context IN subqueries over a shared connection.
+See [CHANGELOG](CHANGELOG.md) and [Closure translation](docs/closure-translation.md).
+
 ## 1.0 support scope and compatibility
 
 The following defines the support contract for the 1.0 release and subsequent
@@ -1404,7 +1411,7 @@ $db->set(Customers::class)->where(fn($c) => str_ends_with($c->name, 'z'));
 $db->set(Customers::class)->where(fn($c) => str_contains($c->name, $needle));
 ```
 
-Use a compatible `light-linq` version with `StringMatchExpression` support.
+light-entity v1.2.0 requires light-linq `^1.2`, including `StringMatchExpression` support.
 The SQL translator lowers these operations to `LikeExpression`, escaping literal
 `%`, `_`, `!`, and `[` before adding wildcards. Search strings are parameterized;
 field-valued needles are escaped in SQL using `REPLACE`. Nulls follow SQL's
@@ -1413,8 +1420,8 @@ and may differ from PHP's case-sensitive in-memory matching.
 
 ### Closure queries: Contains and Any
 
-Requires the published `mathsgod/light-linq` v1.1.0 or later within the 1.x
-series (`^1.1`). Install dependencies with `composer install`; a sibling LINQ
+Requires `mathsgod/light-linq` v1.2.0 or later within the 1.x
+series (`^1.2`). Install dependencies with `composer install`; a sibling LINQ
 checkout or local path repository is not required. This version supplies the
 `Light\Linq\Expressions` namespace and closure translator.
 

@@ -6,7 +6,7 @@
     "require": {
         "php": ">=8.3",
         "ext-pdo": "*",
-        "mathsgod/light-linq": "^1.1"
+        "mathsgod/light-linq": "^1.2"
     },
     "autoload": {
         "psr-4": {
