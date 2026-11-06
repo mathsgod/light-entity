@@ -15,7 +15,7 @@ final class ClosureQueryTranslator
     {
         $captured = new \SplObjectStorage();
         foreach ((new \ReflectionFunction($closure))->getStaticVariables() as $value) {
-            if ($value instanceof IQueryable) { $captured->attach($value->expression()); }
+            if ($value instanceof IQueryable) { $captured->offsetSet($value->expression()); }
         }
         return self::convert(ClosureTranslator::translate($closure, $provider), $mapping, $captured);
     }
@@ -24,7 +24,7 @@ final class ClosureQueryTranslator
     {
         if ($value instanceof AnyExpression) {
             $query = $value->source;
-            if ($query instanceof MethodCallExpression && $query->method === 'where' && !$captured->contains($query)) {
+            if ($query instanceof MethodCallExpression && $query->method === 'where' && !$captured->offsetExists($query)) {
                 $innerMapping = self::mapping($query->source);
                 $arguments = $query->arguments;
                 $arguments['predicate'] = self::convert($arguments['predicate'], $innerMapping, $captured);
