@@ -208,6 +208,10 @@ final readonly class EntityMapping
     public function convertPredicate(\Light\Linq\Expressions\ValueExpression $predicate): \Light\Linq\Expressions\ValueExpression
     {
         if ($predicate instanceof \Light\Linq\Expressions\BinaryExpression) {
+            // Arithmetic constants are operands, not model values to convert.
+            if (in_array($predicate->operator, ['+', '-', '*', '/', '%'], true)) {
+                return $predicate;
+            }
             $left = $predicate->left;
             $right = $predicate->right;
             if ($left instanceof \Light\Linq\Expressions\FieldExpression && $right instanceof \Light\Linq\Expressions\ConstantExpression

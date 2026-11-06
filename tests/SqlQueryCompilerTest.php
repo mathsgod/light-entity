@@ -19,6 +19,17 @@ use PHPUnit\Framework\TestCase;
 
 final class SqlQueryCompilerTest extends TestCase
 {
+    #[DataProvider('dialects')]
+    public function testArithmeticClosureCompilesForEveryDialect(SqlDialect $dialect, string $unused): void
+    {
+        $query = $this->query()->where(fn($o) => ($o->total + $o->tax) * 2 >= 30);
+        $compiled = (new SqlQueryCompiler($dialect))->compile($query->expression());
+        $total = $dialect->quoteIdentifier('total');
+        $tax = $dialect->quoteIdentifier('tax');
+        self::assertStringContainsString("((($total + $tax) * :p0) >= :p1)", $compiled->sql);
+        self::assertSame(['p0' => 2, 'p1' => 30], $compiled->parameters);
+    }
+
     /** @return iterable<string, array{SqlDialect, string}> */
     public static function dialects(): iterable
     {

@@ -27,6 +27,21 @@ final class ClosureContext extends DbContext
 
 final class ClosureSubqueryTest extends TestCase
 {
+    public function testArithmeticClosureFiltersAndPreservesPrecedenceInSql(): void
+    {
+        $db = $this->fixture();
+        $roles = $db->set(ClosureRole::class);
+        $query = $roles->where(fn($o) => $o->id + $o->user_id >= 13);
+        self::assertSame([13], $query->select(fn($o) => $o->id)->toArray());
+        $compiled = $query->asQueryable()->provider()->compile($query->asQueryable()->expression());
+        self::assertStringContainsString(' + ', $compiled->sql);
+        self::assertContains(13, array_values($compiled->parameters));
+        self::assertSame([10, 11, 13], $roles->where(fn($o) => ($o->id - $o->user_id) * 2 >= 18)
+            ->select(fn($o) => $o->id)->toArray());
+        self::assertSame([10, 13], $roles->where(fn($o) => $o->id % 3 == 1)
+            ->select(fn($o) => $o->id)->toArray());
+    }
+
     private function fixture(): ClosureContext
     {
         if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) { self::markTestSkipped('pdo_sqlite required.'); }
