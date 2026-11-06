@@ -4,28 +4,38 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expression\AggregateExpression;
-use Light\Linq\Expression\BinaryExpression;
-use Light\Linq\Expression\ConstantExpression;
-use Light\Linq\Expression\FieldExpression;
-use Light\Linq\Expression\LogicalExpression;
-use Light\Linq\Expression\ProjectionExpression;
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\AggregateExpression;
+use Light\Linq\Expressions\BinaryExpression;
+use Light\Linq\Expressions\ConstantExpression;
+use Light\Linq\Expressions\FieldExpression;
+use Light\Linq\Expressions\LogicalExpression;
+use Light\Linq\Expressions\ProjectionExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 abstract class AbstractSqlDialect implements SqlDialect
 {
     /** @var array<string, mixed> */
     private array $parameters = [];
     private int $parameterIndex = 0;
+    private bool $qualifyFields = false;
+    private int $aliasIndex = 0;
+    private ?string $currentAlias = null;
+    /** @var list<string|null> Lexical EXISTS scopes, nearest first. */
+    private array $outerScopes = [];
 
     final public function compile(QueryPlan $query): CompiledQuery
     {
         $this->parameters = [];
         $this->parameterIndex = 0;
+        $this->aliasIndex = 0;
+        $this->currentAlias = null;
+        $this->outerScopes = [];
+        $this->qualifyFields = $this->hasOuterFields($query);
 
         $terminal = $query->terminal;
         if (in_array($terminal, ['update', 'delete'], true)) {
             $table = $this->quoteIdentifier($query->table);
+            if ($this->qualifyFields) { $this->currentAlias = $query->table; }
             if ($terminal === 'update') {
                 $assignments = [];
                 foreach ($query->assignments as $name => $value) {
@@ -93,6 +103,7 @@ abstract class AbstractSqlDialect implements SqlDialect
         }
 
         if ($terminal === 'all' || $terminal === 'contains') {
+            $this->currentAlias = $this->qualifyFields ? '__linq_source' : null;
             $predicate = $this->value($query->terminalPredicate);
             $condition = $terminal === 'all'
                 ? '(CASE WHEN '.$predicate.' THEN 0 ELSE 1 END = 1)' : $predicate;
@@ -121,19 +132,41 @@ abstract class AbstractSqlDialect implements SqlDialect
     /** @return array{prefix: string, suffix: string} */
     abstract protected function pagination(?int $limit, ?int $offset, bool $hasOrderBy): array;
 
+    private function hasOuterFields(mixed $value): bool
+    {
+        if ($value instanceof \Light\Linq\Expressions\OuterFieldExpression) { return true; }
+        if ($value instanceof QueryPlan || $value instanceof \Light\Linq\Expressions\Expression) {
+            $value = get_object_vars($value);
+        }
+        if (is_array($value)) {
+            foreach ($value as $child) { if ($this->hasOuterFields($child)) { return true; } }
+        }
+        return false;
+    }
+
     private function compileSequence(QueryPlan $query, ?string $selectionOverride = null): string
+    {
+        $previous = $this->currentAlias;
+        $this->currentAlias = $this->qualifyFields
+            ? ($query->innerPlan !== null ? 'outer' : '__q'.$this->aliasIndex++) : null;
+        try { return $this->compileSequenceBody($query, $selectionOverride); }
+        finally { $this->currentAlias = $previous; }
+    }
+
+    private function compileSequenceBody(QueryPlan $query, ?string $selectionOverride = null): string
     {
         $pagination = $this->pagination($query->limit, $query->offset, $query->orderings !== []);
         $selection = $selectionOverride ?? $this->selection($query->selection);
 
         $from = $query->sourcePlan === null
             ? ($query->rawSource === null ? $this->quoteIdentifier($query->table)
-                : '('.(new RawSqlParser())->compile($query->rawSource, $this->parameter(...), $this)."\n) AS ".$this->quoteIdentifier('__raw_source'))
+                .($this->currentAlias === null ? '' : ' AS '.$this->quoteIdentifier($this->currentAlias))
+                : '('.(new RawSqlParser())->compile($query->rawSource, $this->parameter(...), $this)."\n) AS ".$this->quoteIdentifier($this->currentAlias ?? '__raw_source'))
             : '('.$this->derivedSequence($query->sourcePlan).') AS '.$this->quoteIdentifier(
-                $query->innerPlan === null ? '__linq_result' : 'outer',
+                $this->currentAlias ?? ($query->innerPlan === null ? '__linq_result' : 'outer'),
             );
         if ($query->setLeft !== null) {
-            $from = '('.$this->compileSet($query).') AS '.$this->quoteIdentifier('__linq_set');
+            $from = '('.$this->compileSet($query).') AS '.$this->quoteIdentifier($this->currentAlias ?? '__linq_set');
         }
         $sql = 'SELECT '.($query->distinct ? 'DISTINCT ' : '').$pagination['prefix'].$selection.' FROM '.$from;
         if ($query->innerPlan !== null) {
@@ -258,7 +291,15 @@ abstract class AbstractSqlDialect implements SqlDialect
         return match (true) {
             $expression instanceof AggregateExpression => strtoupper($expression->function).'('.(
                 $expression->operand === null ? '*' : $this->value($expression->operand)).')',
-            $expression instanceof FieldExpression => $this->quoteIdentifier($expression->path),
+            $expression instanceof FieldExpression => $this->quoteIdentifier(
+                $this->currentAlias !== null && !str_contains($expression->path, '.')
+                    ? $this->currentAlias.'.'.$expression->path : $expression->path,
+            ),
+            $expression instanceof \Light\Linq\Expressions\OuterFieldExpression => $this->outerField($expression),
+            $expression instanceof ExistsExpression => $this->exists($expression),
+            $expression instanceof InExpression => '('.$this->value($expression->item)
+                .($expression->negated ? ' NOT IN (' : ' IN (')
+                .$this->derivedSequence((new SqlQueryCompiler($this))->subqueryPlan($expression->subquery)).'))',
             $expression instanceof NotExpression => '(NOT '.$this->value($expression->operand).')',
             // Newline keeps a trailing line comment inside the condition's parentheses.
             $expression instanceof RawSqlPredicateExpression => '('.(new RawSqlParser())->compile($expression, $this->parameter(...), $this)."\n)",
@@ -274,6 +315,23 @@ abstract class AbstractSqlDialect implements SqlDialect
             ),
             default => throw new \LogicException('Unsupported SQL value expression: '.$expression::class),
         };
+    }
+
+    private function outerField(\Light\Linq\Expressions\OuterFieldExpression $field): string
+    {
+        $alias = $this->outerScopes[$field->depth - 1] ?? null;
+        if ($alias === null) { throw new \LogicException('Outer fields require a matching enclosing EXISTS scope.'); }
+        return $this->quoteIdentifier($alias.'.'.$field->path);
+    }
+
+    private function exists(ExistsExpression $expression): string
+    {
+        $previous = $this->outerScopes;
+        $this->outerScopes = [$this->currentAlias, ...$previous];
+        try {
+            $plan = (new SqlQueryCompiler($this))->existsPlan($expression->subquery);
+            return 'EXISTS ('.$this->derivedSequence($plan).')';
+        } finally { $this->outerScopes = $previous; }
     }
 
     /** Dialects can restrict or customize scalar function naming. */

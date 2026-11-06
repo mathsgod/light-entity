@@ -75,29 +75,27 @@ class DbContext
     /** @internal */
     public function entityQuery(EntityMapping $mapping): Queryable
     {
-        $source = new \Light\Linq\Expression\SourceExpression($mapping->table);
+        $source = new \Light\Linq\Expressions\SourceExpression($mapping->table);
         return new Queryable($this->provider, $this->querySource($mapping, $source));
     }
 
     /** @internal */
-    public function querySource(EntityMapping $mapping, \Light\Linq\Expression\Expression $source): \Light\Linq\Expression\Expression
+    public function querySource(EntityMapping $mapping, \Light\Linq\Expressions\Expression $source): \Light\Linq\Expressions\Expression
     {
         $this->ensureModelCreated();
-        return $this->modelBuilder->hasFilters()
-            ? new \Light\Entity\Sql\EntityQuerySourceExpression($mapping, $source) : $source;
+        return new \Light\Entity\Sql\EntityQuerySourceExpression($mapping, $source);
     }
 
-    private function prepareQuery(\Light\Linq\Expression\Expression $expression): \Light\Linq\Expression\Expression
+    private function prepareQuery(\Light\Linq\Expressions\Expression $expression): \Light\Linq\Expressions\Expression
     {
         $this->ensureModelCreated();
-        if (!$this->modelBuilder->hasFilters()) { return $expression; }
         return QueryFilterRewriter::rewrite($expression, function (\Light\Entity\Sql\EntityQuerySourceExpression $source) {
             $query = new Queryable($this->provider, $source->source);
             foreach ($this->modelBuilder->filters($source->mapping->class) as $name => $filter) {
                 if ($source->ignoredFilters === null || in_array($name, $source->ignoredFilters, true)) { continue; }
                 $predicate = $filter instanceof \Closure ? $filter($this) : $filter;
                 if (is_array($predicate)) { $predicate = WhereFilter::parse($source->mapping->convertFilter($predicate)); }
-                elseif ($predicate instanceof \Light\Linq\Expression\ValueExpression) { $predicate = $source->mapping->convertPredicate($predicate); }
+                elseif ($predicate instanceof \Light\Linq\Expressions\ValueExpression) { $predicate = $source->mapping->convertPredicate($predicate); }
                 else { throw new \LogicException('A query filter must return a condition map or ValueExpression.'); }
                 $query = $query->where($predicate);
             }
@@ -118,7 +116,7 @@ class DbContext
         $this->functions->register($name, $schema, $parameterCount);
     }
 
-    public function function(string $name, \Light\Linq\Expression\ValueExpression|int|float|string|bool|null ...$arguments): \Light\Entity\Sql\FunctionExpression
+    public function function(string $name, \Light\Linq\Expressions\ValueExpression|int|float|string|bool|null ...$arguments): \Light\Entity\Sql\FunctionExpression
     {
         return $this->functions->call($name, ...$arguments);
     }
@@ -262,7 +260,7 @@ class DbContext
         if ($values !== null) {
             foreach ($values as $name => $value) {
                 // SQL expressions already represent provider-side values.
-                if (!$value instanceof \Light\Linq\Expression\ValueExpression) {
+                if (!$value instanceof \Light\Linq\Expressions\ValueExpression) {
                     $values[$name] = $mapping->toProviderValue($name, $value);
                 }
             }

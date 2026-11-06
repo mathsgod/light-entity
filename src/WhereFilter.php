@@ -6,7 +6,7 @@ namespace Light\Entity;
 
 use Light\Entity\Sql\NotExpression;
 use Light\Linq\Expr;
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 /** Converts GraphQL-compatible filter arrays to parameterized query expressions. */
 final class WhereFilter

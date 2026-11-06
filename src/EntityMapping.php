@@ -205,25 +205,26 @@ final readonly class EntityMapping
     }
 
     /** Convert direct field/constant comparisons to provider values. */
-    public function convertPredicate(\Light\Linq\Expression\ValueExpression $predicate): \Light\Linq\Expression\ValueExpression
+    public function convertPredicate(\Light\Linq\Expressions\ValueExpression $predicate): \Light\Linq\Expressions\ValueExpression
     {
-        if ($predicate instanceof \Light\Linq\Expression\BinaryExpression) {
+        if ($predicate instanceof \Light\Linq\Expressions\BinaryExpression) {
             $left = $predicate->left;
             $right = $predicate->right;
-            if ($left instanceof \Light\Linq\Expression\FieldExpression && $right instanceof \Light\Linq\Expression\ConstantExpression
+            if ($left instanceof \Light\Linq\Expressions\FieldExpression && $right instanceof \Light\Linq\Expressions\ConstantExpression
                 && isset($this->converters[$left->path])) {
-                $right = new \Light\Linq\Expression\ConstantExpression($this->toProviderValue($left->path, $right->value));
-            } elseif ($right instanceof \Light\Linq\Expression\FieldExpression && $left instanceof \Light\Linq\Expression\ConstantExpression
+                $right = new \Light\Linq\Expressions\ConstantExpression($this->toProviderValue($left->path, $right->value));
+            } elseif ($right instanceof \Light\Linq\Expressions\FieldExpression && $left instanceof \Light\Linq\Expressions\ConstantExpression
                 && isset($this->converters[$right->path])) {
-                $left = new \Light\Linq\Expression\ConstantExpression($this->toProviderValue($right->path, $left->value));
+                $left = new \Light\Linq\Expressions\ConstantExpression($this->toProviderValue($right->path, $left->value));
             }
-            return new \Light\Linq\Expression\BinaryExpression($left, $predicate->operator, $right);
+            return new \Light\Linq\Expressions\BinaryExpression($left, $predicate->operator, $right);
         }
-        if ($predicate instanceof \Light\Linq\Expression\LogicalExpression) {
-            return new \Light\Linq\Expression\LogicalExpression($this->convertPredicate($predicate->left), $predicate->operator, $this->convertPredicate($predicate->right));
+        if ($predicate instanceof \Light\Linq\Expressions\LogicalExpression) {
+            return new \Light\Linq\Expressions\LogicalExpression($this->convertPredicate($predicate->left), $predicate->operator, $this->convertPredicate($predicate->right));
         }
-        if ($predicate instanceof \Light\Entity\Sql\NotExpression) {
-            return new \Light\Entity\Sql\NotExpression($this->convertPredicate($predicate->operand));
+        if ($predicate instanceof \Light\Entity\Sql\NotExpression || $predicate instanceof \Light\Linq\Expressions\NotExpression) {
+            $class = $predicate::class;
+            return new $class($this->convertPredicate($predicate->operand));
         }
         return $predicate;
     }

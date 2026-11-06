@@ -7,7 +7,7 @@ namespace Light\Entity\Tests\SqliteFunctions;
 use PDO;
 use Light\Entity\{DbContext, Entity, EntityState, Table};
 use Light\Linq\Expr;
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ValueExpression;
 use PHPUnit\Framework\TestCase;
 
 #[Table('users')]

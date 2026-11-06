@@ -1265,3 +1265,148 @@ predicates and are not a replacement for database access controls.
 No-filter contexts keep ordinary table source expressions and skip filter
 rewriting. The feature is covered on SQLite and MySQL, including filtered LEFT
 JOINs, string-key Include batches, converter binding and runtime tenant changes.
+
+### IN subqueries
+
+Use `whereIn()` or `whereNotIn()` with an explicit single-column selection from
+another query in the same context:
+
+```php
+$adminIds = $context->set(UserRole::class)
+    ->where(['name' => 'admins'])
+    ->select(Expr::field('user_id'));
+
+$users = $context->set(User::class)
+    ->whereIn('user_id', $adminIds)
+    ->toArray();
+```
+
+This produces a single SQL query equivalent to:
+
+```sql
+SELECT * FROM User
+WHERE user_id IN (SELECT user_id FROM UserRole WHERE name = :p0)
+```
+
+The subquery is not executed or materialized separately. Parameters are bound
+across both queries without name collisions. Global query filters apply to the
+subquery too; call `ignoreQueryFilters()` on it to opt out. Calling
+`ignoreQueryFilters()` on the composed outer query also affects its subqueries.
+The outer query supports further filters, ordering, and bulk update/delete
+(subject to the database's restrictions on modifying a table read by a subquery).
+
+For expression composition, use the light-entity SQL node directly:
+
+```php
+use Light\Entity\Sql\InExpression;
+
+$users = $context->set(User::class)
+    ->where(new InExpression(Expr::field('user_id'), $adminIds))
+    ->toArray();
+```
+
+The optional third constructor argument negates membership (`NOT IN`). Subqueries
+must select exactly one column. These expressions use SQL NULL semantics:
+`NOT IN` with a NULL in the subquery does not match otherwise absent values.
+An empty subquery matches no rows for `IN` and all rows for `NOT IN`.
+Correlated queries are supported through the closure `any()` syntax below. The existing array
+filter `['id' => ['in' => [1, 2, 3]]]` continues to support value lists with its
+existing NULL handling.
+
+### Closure queries: Contains and Any
+
+This development checkout references `../light-linq` using a Composer path
+repository and a symlink. Keep the sibling checkout present when running
+`composer install`; it supplies the new `Light\Linq\Expressions` namespace and
+closure translator. Once that LINQ version is released, replace the local path
+repository and `^1.0@dev` development requirement with the published version.
+
+`DbSet::where()` and `select()` now accept the restricted query closures
+supported by light-linq:
+
+```php
+$adminIds = $context->set(UserRole::class)
+    ->where(['name' => 'admins'])
+    ->select(fn($r) => $r->user_id);
+
+$users = $context->set(User::class)
+    ->where(fn($u) => $adminIds->contains($u->user_id)
+        && $u->status == 'active')
+    ->toArray();
+```
+
+LINQ's `ContainsExpression` is lowered to light-entity's `Sql\InExpression`.
+For correlated existence checks, capture the inner DbSet directly:
+
+```php
+$roles = $context->set(UserRole::class);
+
+$users = $context->set(User::class)
+    ->where(fn($u) => $roles->any(
+        fn($r) => $r->user_id == $u->user_id && $r->name == 'admins'
+    ))
+    ->toArray();
+```
+
+`AnyExpression` is lowered to `Sql\ExistsExpression`. SQL aliases are generated
+for inner and outer rows, including nested `any()` calls and queries against the
+same table. `!$roles->any(...)` generates `NOT EXISTS`. An `any()` call without
+a predicate checks whether the captured query has any rows. All of these are
+compiled into a single SQL statement; the translator never executes the inner
+PHP call. Subqueries must use the same provider/context as the outer query.
+
+Global query filters apply to subqueries. Call `ignoreQueryFilters()` on the
+inner set to disable its filters, or on the composed
+outer `DbSet` to disable filters across the composed query. `DbSet` closures use
+mapped value converters for their own conditions and new `any()` predicates;
+existing converted conditions on captured queries are preserved. As before,
+`asQueryable()` is the raw query API and callers supplying its own predicates
+must provide database values.
+
+Unsupported closure syntax fails with `ClosureTranslationException`; operations
+that cannot be represented by the SQL planner fail explicitly with
+`LogicException`. For example, a predicate appended to a paginated inner query
+is currently rejected rather than being moved before its pagination. Put
+closures on separate lines if their source ranges would otherwise be ambiguous.
+Comparisons and membership use database type, collation and NULL semantics;
+`NOT IN` and `NOT EXISTS` can therefore differ when NULL values are involved.
+
+### DbSet as IQueryable
+
+`DbSet<T>` implements `Light\Linq\IQueryable<T>`. It exposes `expression()` and
+`provider()` and can be passed directly to LINQ expression helpers, joins, and
+query closures. `asQueryable()` remains available when raw rows are desired;
+it is no longer required to capture a set in a correlated `any()` closure.
+
+```php
+$roles = $context->set(UserRole::class);
+$admins = $context->set(User::class)->where(fn($u) => $roles->any(
+    fn($r) => $r->user_id == $u->user_id && $r->name == 'admins'
+));
+
+// Executed immediately, returning bool:
+$hasAdmins = $roles->any(fn($r) => $r->name == 'admins');
+```
+
+Entity-returning operations on a DbSet retain materialization, tracking,
+`include()` and query-filter behavior. Projections, grouping, distinct, joins
+and set operations retain their existing untracked `Queryable` results.
+`concat()`, `union()`, `intersect()`, `except()`, `join()`, `leftJoin()` and
+`selectMany()` accept any `IQueryable` from the same provider. When mixing raw
+queries with entity sets, provide the explicit projections required by the SQL
+provider's shape rules.
+
+`firstOrDefault()`, `singleOrDefault()` and `lastOrDefault()` accept a mixed
+fallback value to match `IQueryable`; a non-empty result still returns an entity.
+Ordering parameters use the interface's `keySelector` name for named arguments.
+`contains($entity)` checks all primary-key values, including composite keys,
+without materializing or tracking an additional entity. Null, a different entity
+type or an incomplete key does not match. Scalar membership requires a scalar
+projection, such as `$roles->select(fn($r) => $r->user_id)->contains($id)`.
+
+`sum()`, `average()`, `min()` and `max()` delegate to the query provider, or use
+cached entities for a preloaded relationship collection. `asEnumerable()` keeps
+entity materialization and is the explicit boundary for client-side operations.
+`groupJoin()`, `zip()` and `chunk()` are exposed for interface compatibility;
+the SQL provider still rejects unsupported operators explicitly. Use
+`asEnumerable()` before them to perform those operations in PHP.

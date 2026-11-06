@@ -6,7 +6,7 @@ namespace Light\Entity\Tests\RawSql;
 
 use Light\Entity\Sql\{MySqlDialect, PostgreSqlDialect, RawSqlSourceExpression, SqlDialect, SqliteDialect, SqlQueryCompiler, SqlServerDialect};
 use Light\Linq\{Expr, InMemoryQueryProvider, Queryable};
-use Light\Linq\Expression\MethodCallExpression;
+use Light\Linq\Expressions\MethodCallExpression;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

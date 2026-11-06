@@ -8,7 +8,7 @@ use PDO;
 use Light\Entity\{DbContext, Entity, SqlFunctionRegistry, Table};
 use Light\Entity\Sql\{FunctionExpression, MySqlDialect, PostgreSqlDialect, SqlDialect, SqliteDialect, SqlQueryCompiler, SqlServerDialect};
 use Light\Linq\{Expr, InMemoryQueryProvider, Queryable};
-use Light\Linq\Expression\MethodCallExpression;
+use Light\Linq\Expressions\MethodCallExpression;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 /** A trusted SQL condition; its parameters are provider values, not SQL fragments. */
 final readonly class RawSqlPredicateExpression implements ValueExpression

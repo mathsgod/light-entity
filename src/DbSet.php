@@ -6,10 +6,12 @@ namespace Light\Entity;
 
 use Light\Linq\Expr;
 use Light\Linq\Queryable;
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\{IQueryable, IQueryProvider, IEnumerable, Enumerable};
+use Light\Linq\Expressions\Expression;
+use Light\Linq\Expressions\ValueExpression;
 
-/** @template T of object @implements \IteratorAggregate<int, T> */
-final readonly class DbSet implements \IteratorAggregate, \Countable
+/** @template T of object @implements IQueryable<T> */
+final readonly class DbSet implements IQueryable, \Countable
 {
     public function __construct(
         private DbContext $context,
@@ -21,10 +23,20 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         private ?QueryTrackingBehavior $trackingBehavior = null,
     ) {}
 
+    public function expression(): Expression
+    {
+        return $this->query->expression();
+    }
+
+    public function provider(): IQueryProvider
+    {
+        return $this->query->provider();
+    }
+
     /** Start a composable SQL query on an unfiltered entity set. */
     public function fromSqlRaw(string $sql, array $parameters = []): self
     {
-        if (!$this->root || !($this->query->expression() instanceof \Light\Linq\Expression\SourceExpression || $this->query->expression() instanceof \Light\Entity\Sql\EntityQuerySourceExpression)) {
+        if (!$this->root || !($this->query->expression() instanceof \Light\Linq\Expressions\SourceExpression || $this->query->expression() instanceof \Light\Entity\Sql\EntityQuerySourceExpression)) {
             throw new \LogicException('fromSqlRaw() requires the root DbSet; apply it before query operators.');
         }
         $source = $this->context->querySource($this->mapping, new \Light\Entity\Sql\RawSqlSourceExpression($sql, $parameters));
@@ -60,12 +72,38 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->withTracking(QueryTrackingBehavior::TrackAll);
     }
 
-    public function where(ValueExpression|array $predicate): self
+    public function where(ValueExpression|array|\Closure $predicate): self
     {
+        if ($predicate instanceof \Closure) {
+            $predicate = ClosureQueryTranslator::translate($predicate, $this->mapping, $this->query->provider());
+            return $this->with($this->query->where($predicate));
+        }
         $predicate = is_array($predicate)
             ? WhereFilter::parse($this->mapping->convertFilter($predicate))
             : $this->mapping->convertPredicate($predicate);
         return $this->with($this->query->where($predicate));
+    }
+
+    /** Filter by membership in a single-column SQL subquery. */
+    public function whereIn(string|ValueExpression $item, IQueryable $subquery): self
+    {
+        if ($subquery->provider() !== $this->query->provider()) {
+            throw new \InvalidArgumentException('IN subqueries must use the same query provider as the outer query.');
+        }
+        return $this->where(new \Light\Entity\Sql\InExpression(
+            is_string($item) ? Expr::field($item) : $item, $subquery,
+        ));
+    }
+
+    /** SQL NOT IN semantics apply, including NULL values in the subquery. */
+    public function whereNotIn(string|ValueExpression $item, IQueryable $subquery): self
+    {
+        if ($subquery->provider() !== $this->query->provider()) {
+            throw new \InvalidArgumentException('IN subqueries must use the same query provider as the outer query.');
+        }
+        return $this->where(new \Light\Entity\Sql\InExpression(
+            is_string($item) ? Expr::field($item) : $item, $subquery, true,
+        ));
     }
 
     /** Append a trusted SQL condition with bound positional or named provider values. */
@@ -89,89 +127,156 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     {
         return $this->query->distinct();
     }
-    public function select(ValueExpression $selector): Queryable
+    public function select(ValueExpression|\Closure $selector): Queryable
     {
         return $this->query->select($selector);
     }
 
     /** Return untracked rows from the set operation. */
-    public function concat(self $second): Queryable
+    public function concat(IQueryable $second): Queryable
     {
-        return $this->query->select(Expr::fields(...$this->mapping->properties))
-            ->concat($second->query->select(Expr::fields(...$second->mapping->properties)));
+        return $this->setQuery('concat', $second);
     }
 
     /** Return untracked rows from the set operation. */
-    public function union(self $second): Queryable
+    public function union(IQueryable $second): Queryable
     {
-        return $this->query->select(Expr::fields(...$this->mapping->properties))
-            ->union($second->query->select(Expr::fields(...$second->mapping->properties)));
+        return $this->setQuery('union', $second);
     }
 
     /** Return untracked rows from the set operation. */
-    public function intersect(self $second): Queryable
+    public function intersect(IQueryable $second): Queryable
     {
-        return $this->query->select(Expr::fields(...$this->mapping->properties))
-            ->intersect($second->query->select(Expr::fields(...$second->mapping->properties)));
+        return $this->setQuery('intersect', $second);
     }
 
     /** Return untracked rows from the set operation. */
-    public function except(self $second): Queryable
+    public function except(IQueryable $second): Queryable
     {
-        return $this->query->select(Expr::fields(...$this->mapping->properties))
-            ->except($second->query->select(Expr::fields(...$second->mapping->properties)));
+        return $this->setQuery('except', $second);
     }
 
     /** Flatten another set into untracked projected rows or scalar values. */
     public function selectMany(
-        self $inner,
+        IQueryable $inner,
         ValueExpression $resultSelector,
         ?ValueExpression $predicate = null,
     ): Queryable {
-        return $this->query->selectMany($inner->query, $resultSelector, $predicate);
+        return $this->query->selectMany($inner, $resultSelector, $predicate);
     }
 
-    /** Result fields use outer.* and inner.*; keys are relative to each DbSet. */
+    /** Result fields use outer.* and inner.*; keys are relative to each source. */
     public function join(
-        self $inner,
+        IQueryable $inner,
         ValueExpression $outerKey,
         ValueExpression $innerKey,
         ValueExpression $resultSelector,
     ): Queryable
     {
-        return $this->query->join($inner->query, $outerKey, $innerKey, $resultSelector);
+        return $this->query->join($inner, $outerKey, $innerKey, $resultSelector);
     }
 
     public function leftJoin(
-        self $inner,
+        IQueryable $inner,
         ValueExpression $outerKey,
         ValueExpression $innerKey,
         ValueExpression $resultSelector,
     ): Queryable
     {
-        return $this->query->leftJoin($inner->query, $outerKey, $innerKey, $resultSelector);
+        return $this->query->leftJoin($inner, $outerKey, $innerKey, $resultSelector);
     }
 
-    public function orderBy(ValueExpression $selector): self
-    {
-        return $this->with($this->query->orderBy($selector));
+    /** SQL providers may reject this operator; use asEnumerable() for client-side grouping. */
+    public function groupJoin(
+        IQueryable $inner,
+        ValueExpression $outerKey,
+        ValueExpression $innerKey,
+        ValueExpression $resultSelector,
+    ): Queryable {
+        return $this->query->groupJoin($inner, $outerKey, $innerKey, $resultSelector);
     }
 
-    public function orderByDescending(ValueExpression $selector): self
+    public function zip(IQueryable $second, ValueExpression $resultSelector): Queryable
     {
-        return $this->with($this->query->orderByDescending($selector));
+        return $this->query->zip($second, $resultSelector);
     }
 
-    public function thenBy(ValueExpression $selector): self
+    public function chunk(int $size): Queryable
     {
-        return $this->with($this->query->thenBy($selector));
+        return $this->query->chunk($size);
     }
-    public function thenByDescending(ValueExpression $selector): self
+
+    public function sum(ValueExpression $selector): int|float|string
     {
-        return $this->with($this->query->thenByDescending($selector));
+        return $this->aggregateQuery()->sum($selector);
+    }
+
+    public function average(ValueExpression $selector): int|float|string|null
+    {
+        return $this->aggregateQuery()->average($selector);
+    }
+
+    public function min(ValueExpression $selector): mixed
+    {
+        return $this->aggregateQuery()->min($selector);
+    }
+
+    public function max(ValueExpression $selector): mixed
+    {
+        return $this->aggregateQuery()->max($selector);
+    }
+
+    /** Entity membership is determined by all mapped primary-key values. */
+    public function contains(mixed $value): bool
+    {
+        if (!$value instanceof $this->mapping->class) { return false; }
+        $key = [];
+        $predicate = null;
+        foreach ($this->mapping->keys as $name) {
+            $part = $value->$name ?? null;
+            if ($part === null || !is_scalar($part)) { return false; }
+            $key[$name] = $part;
+            $comparison = Expr::eq(Expr::field($name), $part);
+            $predicate = $predicate === null ? $comparison : Expr::both($predicate, $comparison);
+        }
+        if ($this->loaded !== null) {
+            foreach ($this->loaded as $entity) {
+                $matches = true;
+                foreach ($key as $name => $part) { $matches = $matches && ($entity->$name ?? null) === $part; }
+                if ($matches) { return true; }
+            }
+            return false;
+        }
+        // A terminal predicate preserves pagination and avoids materializing/tracking an entity.
+        return $this->query->firstOrDefault($this->mapping->convertPredicate($predicate)) !== null;
+    }
+
+    /** Switch to client-side operations while preserving entity materialization. */
+    public function asEnumerable(): IEnumerable
+    {
+        return Enumerable::from($this);
+    }
+
+    public function orderBy(ValueExpression $keySelector): self
+    {
+        return $this->with($this->query->orderBy($keySelector));
+    }
+
+    public function orderByDescending(ValueExpression $keySelector): self
+    {
+        return $this->with($this->query->orderByDescending($keySelector));
+    }
+
+    public function thenBy(ValueExpression $keySelector): self
+    {
+        return $this->with($this->query->thenBy($keySelector));
+    }
+    public function thenByDescending(ValueExpression $keySelector): self
+    {
+        return $this->with($this->query->thenByDescending($keySelector));
     }
     /** @return T|null */
-    public function firstOrDefault(?ValueExpression $predicate = null, ?object $default = null): ?object
+    public function firstOrDefault(?ValueExpression $predicate = null, mixed $default = null): mixed
     {
         return $this->entityTerminal('firstOrDefault', $predicate, $default);
     }
@@ -181,7 +286,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return $this->entityTerminal('single', $predicate);
     }
     /** @return T|null */
-    public function singleOrDefault(?ValueExpression $predicate = null, ?object $default = null): ?object
+    public function singleOrDefault(?ValueExpression $predicate = null, mixed $default = null): mixed
     {
         return $this->entityTerminal('singleOrDefault', $predicate, $default);
     }
@@ -193,7 +298,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     }
 
     /** @return T|null */
-    public function lastOrDefault(?ValueExpression $predicate = null, ?object $default = null): ?object
+    public function lastOrDefault(?ValueExpression $predicate = null, mixed $default = null): mixed
     {
         return $this->entityTerminal('lastOrDefault', $predicate, $default);
     }
@@ -206,8 +311,9 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
     public function skip(int $count): self { return $this->with($this->query->skip($count)); }
     public function take(int $count): self { return $this->with($this->query->take($count)); }
     public function count(): int { return $this->loaded === null ? $this->query->count() : count($this->loaded); }
-    public function any(?ValueExpression $predicate = null): bool
+    public function any(ValueExpression|\Closure|null $predicate = null): bool
     {
+        if ($predicate instanceof \Closure) { return $this->where($predicate)->any(); }
         return $this->loaded !== null && $predicate === null
             ? $this->loaded !== [] : $this->query->any($predicate === null ? null : $this->mapping->convertPredicate($predicate));
     }
@@ -328,7 +434,7 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         return iterator_to_array($this, false);
     }
 
-    private function entityTerminal(string $method, ?ValueExpression $predicate, ?object $default = null): ?object
+    private function entityTerminal(string $method, ?ValueExpression $predicate, mixed $default = null): mixed
     {
         $tracking = $this->trackingMode();
         $this->context->validateIncludes($this->mapping, $this->includes);
@@ -339,6 +445,20 @@ final readonly class DbSet implements \IteratorAggregate, \Countable
         $entity = $this->loaded === null ? $this->context->materialize($this->mapping, $result, $tracking) : $result;
         $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
         return $entity;
+    }
+
+    private function setQuery(string $method, IQueryable $second): Queryable
+    {
+        if ($second instanceof self) {
+            $second = $second->query->select(Expr::fields(...$second->mapping->properties));
+        }
+        return $this->query->select(Expr::fields(...$this->mapping->properties))->$method($second);
+    }
+
+    private function aggregateQuery(): Queryable
+    {
+        return $this->loaded === null ? $this->query
+            : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded');
     }
 
     private function trackingMode(): QueryTrackingBehavior

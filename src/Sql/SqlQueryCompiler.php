@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expression\Expression;
-use Light\Linq\Expression\AggregateExpression;
-use Light\Linq\Expression\GroupKeyExpression;
-use Light\Linq\Expression\BinaryExpression;
-use Light\Linq\Expression\ConstantExpression;
-use Light\Linq\Expression\FieldExpression;
-use Light\Linq\Expression\LogicalExpression;
-use Light\Linq\Expression\ProjectionExpression;
-use Light\Linq\Expression\ValueExpression;
-use Light\Linq\Expression\MethodCallExpression;
-use Light\Linq\Expression\SourceExpression;
+use Light\Linq\Expressions\Expression;
+use Light\Linq\Expressions\AggregateExpression;
+use Light\Linq\Expressions\GroupKeyExpression;
+use Light\Linq\Expressions\BinaryExpression;
+use Light\Linq\Expressions\ConstantExpression;
+use Light\Linq\Expressions\FieldExpression;
+use Light\Linq\Expressions\LogicalExpression;
+use Light\Linq\Expressions\ProjectionExpression;
+use Light\Linq\Expressions\ValueExpression;
+use Light\Linq\Expressions\MethodCallExpression;
+use Light\Linq\Expressions\SourceExpression;
 
 final readonly class SqlQueryCompiler
 {
@@ -24,9 +24,30 @@ final readonly class SqlQueryCompiler
 
     public function compile(Expression $expression): CompiledQuery
     {
-        $plan = $this->plan($expression);
+        $plan = $this->plan(QueryExpressionTranslator::translate($expression));
         $this->validatePlan($plan);
         return $this->dialect->compile($plan);
+    }
+
+    /** @internal Build a subquery without resetting the dialect's parameter bindings. */
+    public function subqueryPlan(Expression $expression): QueryPlan
+    {
+        $plan = $this->plan(QueryExpressionTranslator::translate($expression));
+        $this->validatePlan($plan);
+        if ($plan->terminal !== 'sequence' || $plan->selection === null
+            || ($plan->selection instanceof ProjectionExpression && count($plan->selection->members) !== 1)) {
+            throw new \LogicException('IN subqueries require an explicit single-column selection.');
+        }
+        return $plan;
+    }
+
+    /** @internal EXISTS preserves projection, grouping and pagination semantics. */
+    public function existsPlan(Expression $expression): QueryPlan
+    {
+        $plan = $this->plan(QueryExpressionTranslator::translate($expression));
+        $this->validatePlan($plan);
+        if ($plan->terminal !== 'sequence') { throw new \LogicException('EXISTS requires a query sequence.'); }
+        return $plan;
     }
 
     /** Compile a direct single-table write. null assignments means DELETE. */
@@ -42,7 +63,7 @@ final readonly class SqlQueryCompiler
         if (!$source instanceof SourceExpression) {
             throw new \LogicException('Bulk writes require a table source; raw SQL is not supported.');
         }
-        $plan = $this->plan($expression);
+        $plan = $this->plan(QueryExpressionTranslator::translate($expression));
         $this->validatePlan($plan);
         $plan->terminal = $values === null ? 'delete' : 'update';
         if ($values !== null) {
@@ -367,6 +388,11 @@ final readonly class SqlQueryCompiler
             foreach ($value instanceof ProjectionExpression ? $value->members : $value->arguments as $child) {
                 $this->validateValue($child, $grouped);
             }
+        } elseif ($value instanceof ExistsExpression) {
+            $this->existsPlan($value->subquery);
+        } elseif ($value instanceof InExpression) {
+            $this->validateValue($value->item, $grouped);
+            $this->subqueryPlan($value->subquery);
         } elseif ($value instanceof NotExpression) $this->validateValue($value->operand, $grouped);
     }
     private function resolveGrouped(ValueExpression $value, ?ValueExpression $key, bool $operand = false): ValueExpression
@@ -401,6 +427,8 @@ final readonly class SqlQueryCompiler
             return new FunctionExpression($value->definition,
                 array_map(fn ($v) => $this->resolveGrouped($v, $key, $operand), $value->arguments));
         }
+        if ($value instanceof ExistsExpression) return $value;
+        if ($value instanceof InExpression) return new InExpression($this->resolveGrouped($value->item, $key, $operand), $value->subquery, $value->negated);
         if ($value instanceof NotExpression) return new NotExpression($this->resolveGrouped($value->operand, $key, $operand));
         throw new \LogicException('Unsupported grouped expression.');
     }

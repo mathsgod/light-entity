@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expression\Expression;
+use Light\Linq\Expressions\Expression;
 
 /** A trusted, composable SELECT source with bound values; never an entity table mapping. */
 final readonly class RawSqlSourceExpression implements Expression

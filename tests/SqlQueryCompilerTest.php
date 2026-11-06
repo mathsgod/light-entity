@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Light\Entity\Tests;
 
 use Light\Linq\Expr;
-use Light\Linq\Expression\MethodCallExpression;
+use Light\Linq\Expressions\MethodCallExpression;
 use Light\Linq\InMemoryQueryProvider;
 use Light\Linq\Queryable;
 use Light\Entity\Sql\MySqlDialect;

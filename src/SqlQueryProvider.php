@@ -6,7 +6,7 @@ namespace Light\Entity;
 
 use PDO;
 use Light\Linq\IQueryProvider;
-use Light\Linq\Expression\Expression;
+use Light\Linq\Expressions\Expression;
 use Light\Entity\Sql\CompiledQuery;
 use Light\Entity\Sql\SqlDialect;
 use Light\Entity\Sql\SqlQueryCompiler;
@@ -99,13 +99,13 @@ final readonly class SqlQueryProvider implements IQueryProvider
         }
         $expression = $this->prepare($expression);
         $source = $expression;
-        while ($source instanceof \Light\Linq\Expression\MethodCallExpression) {
+        while ($source instanceof \Light\Linq\Expressions\MethodCallExpression) {
             if (!in_array($source->method, ['where', 'orderBy', 'thenBy', 'skip', 'take'], true)) {
                 return null;
             }
             $source = $source->source;
         }
-        if (!$source instanceof \Light\Linq\Expression\SourceExpression || $source->name !== $mapping->table) {
+        if (!$source instanceof \Light\Linq\Expressions\SourceExpression || $source->name !== $mapping->table) {
             return null; // Raw SQL may change value types; retain schema conversions.
         }
         $query = $this->compiler->compile($expression);

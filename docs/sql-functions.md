@@ -103,7 +103,7 @@ A custom context can provide a named PHP method that builds the expression:
 ```php
 use PDO;
 use Light\Entity\DbContext;
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 class MyDbContext extends DbContext
 {

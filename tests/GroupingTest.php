@@ -37,7 +37,7 @@ final class GroupingTest extends TestCase
         $query = $this->query()->select(Expr::fields('customer'))->take(2)->distinct();
         self::assertSame('SELECT DISTINCT * FROM (SELECT "customer" AS "customer" FROM "orders" LIMIT 2) AS "__linq_result"',
             $compiler->compile($query->expression())->sql);
-        self::assertStringStartsWith('SELECT COUNT(*)', $compiler->compile(new \Light\Linq\Expression\MethodCallExpression($query->expression(), 'count'))->sql);
+        self::assertStringStartsWith('SELECT COUNT(*)', $compiler->compile(new \Light\Linq\Expressions\MethodCallExpression($query->expression(), 'count'))->sql);
     }
     public function testScalarDistinctAfterPaginationPreservesScalarResult(): void
     {
@@ -68,7 +68,7 @@ final class GroupingTest extends TestCase
         $query = $this->query()->groupBy(Expr::field('customer'));
         foreach (['count', 'any'] as $terminal) {
             $compiled = (new SqlQueryCompiler(new SqliteDialect()))->compile(
-                new \Light\Linq\Expression\MethodCallExpression($query->expression(), $terminal));
+                new \Light\Linq\Expressions\MethodCallExpression($query->expression(), $terminal));
             self::assertSame($terminal, $compiled->resultMode);
             self::assertStringStartsWith('SELECT COUNT(*)', $compiled->sql);
             self::assertStringContainsString('GROUP BY "customer"', $compiled->sql);

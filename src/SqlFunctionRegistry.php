@@ -6,8 +6,8 @@ namespace Light\Entity;
 
 use Light\Entity\Sql\FunctionExpression;
 use Light\Entity\Sql\SqlFunctionDefinition;
-use Light\Linq\Expression\ConstantExpression;
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ConstantExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 /** Context-scoped scalar function mappings and expression construction. */
 final class SqlFunctionRegistry

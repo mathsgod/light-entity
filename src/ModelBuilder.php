@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity;
 
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 /** Context-local query configuration; built once, with deferred runtime predicates. */
 final class ModelBuilder

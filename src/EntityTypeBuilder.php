@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity;
 
-use Light\Linq\Expression\ValueExpression;
+use Light\Linq\Expressions\ValueExpression;
 
 /** Fluent configuration for one entity type. */
 final readonly class EntityTypeBuilder

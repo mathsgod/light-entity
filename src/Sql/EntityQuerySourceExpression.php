@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Light\Entity\Sql;
 
 use Light\Entity\EntityMapping;
-use Light\Linq\Expression\Expression;
+use Light\Linq\Expressions\Expression;
 
 /** Retains entity identity until filters are expanded immediately before SQL compilation. @internal */
 final readonly class EntityQuerySourceExpression implements Expression
