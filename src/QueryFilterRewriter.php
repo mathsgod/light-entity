@@ -69,6 +69,7 @@ final class QueryFilterRewriter
         return self::rewrite($expression, static fn (EntityQuerySourceExpression $source) => new EntityQuerySourceExpression(
             $source->mapping, $source->source,
             $names === null || $source->ignoredFilters === null ? null : array_values(array_unique([...$source->ignoredFilters, ...$names])),
+            $source->filterResolver,
         ));
     }
 

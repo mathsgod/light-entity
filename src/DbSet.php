@@ -87,9 +87,7 @@ final readonly class DbSet implements IQueryable, \Countable
     /** Filter by membership in a single-column SQL subquery. */
     public function whereIn(string|ValueExpression $item, IQueryable $subquery): self
     {
-        if ($subquery->provider() !== $this->query->provider()) {
-            throw new \InvalidArgumentException('IN subqueries must use the same query provider as the outer query.');
-        }
+        $this->validateSubqueryProvider($subquery);
         return $this->where(new \Light\Entity\Sql\InExpression(
             is_string($item) ? Expr::field($item) : $item, $subquery,
         ));
@@ -98,12 +96,20 @@ final readonly class DbSet implements IQueryable, \Countable
     /** SQL NOT IN semantics apply, including NULL values in the subquery. */
     public function whereNotIn(string|ValueExpression $item, IQueryable $subquery): self
     {
-        if ($subquery->provider() !== $this->query->provider()) {
-            throw new \InvalidArgumentException('IN subqueries must use the same query provider as the outer query.');
-        }
+        $this->validateSubqueryProvider($subquery);
         return $this->where(new \Light\Entity\Sql\InExpression(
             is_string($item) ? Expr::field($item) : $item, $subquery, true,
         ));
+    }
+
+    private function validateSubqueryProvider(IQueryable $subquery): void
+    {
+        $outer = $this->query->provider();
+        $inner = $subquery->provider();
+        if ($inner !== $outer && !($outer instanceof SqlQueryProvider && $inner instanceof SqlQueryProvider
+            && $outer->sharesConnectionWith($inner))) {
+            throw new \InvalidArgumentException('IN subqueries must use the same PDO connection as the outer query.');
+        }
     }
 
     /** Append a trusted SQL condition with bound positional or named provider values. */

@@ -104,6 +104,18 @@ final class InExpressionTest extends TestCase
         $db->set(InUser::class)->whereIn('id', $db->set(InRole::class)->asQueryable())->count();
     }
 
+    public function testDifferentContextsOnTheSameConnectionKeepTheirOwnFilters(): void
+    {
+        $db = $this->fixture();
+        $outer = new DbContext($db->database->getDbConnection());
+        $ids = $db->set(InRole::class)->whereRaw('name = ?', ['admins'])->select(Expr::field('user_id'));
+        $query = $outer->set(InUser::class)->whereIn('id', $ids);
+        self::assertSame('Ada', $query->single()->name);
+        self::assertSame(2, $outer->set(InUser::class)->whereNotIn('id', $ids)->count());
+        self::assertSame(2, $query->ignoreQueryFilters()->count());
+        self::assertSame(1, $query->count());
+    }
+
     public function testRejectsDifferentProviders(): void
     {
         $db = $this->fixture();

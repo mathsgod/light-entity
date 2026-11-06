@@ -22,6 +22,12 @@ final readonly class SqlQueryProvider implements IQueryProvider
         $this->prepareQuery = $prepareQuery === null ? null : \Closure::fromCallable($prepareQuery);
     }
 
+    /** SQL composition is safe only when both providers share the exact PDO connection. */
+    public function sharesConnectionWith(self $other): bool
+    {
+        return $this->pdo === $other->pdo;
+    }
+
     public function compile(Expression $expression): CompiledQuery
     {
         return $this->compiler->compile($this->prepare($expression));

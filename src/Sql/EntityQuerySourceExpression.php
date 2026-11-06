@@ -14,5 +14,6 @@ final readonly class EntityQuerySourceExpression implements Expression
         public EntityMapping $mapping,
         public Expression $source,
         public ?array $ignoredFilters = [],
+        public ?\Closure $filterResolver = null,
     ) {}
 }

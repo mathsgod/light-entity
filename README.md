@@ -1288,7 +1288,7 @@ JOINs, string-key Include batches, converter binding and runtime tenant changes.
 ### IN subqueries
 
 Use `whereIn()` or `whereNotIn()` with an explicit single-column selection from
-another query in the same context:
+another query using the same PDO connection, including a different context or Model:
 
 ```php
 $adminIds = $context->set(UserRole::class)
@@ -1308,8 +1308,10 @@ WHERE user_id IN (SELECT user_id FROM UserRole WHERE name = :p0)
 ```
 
 The subquery is not executed or materialized separately. Parameters are bound
-across both queries without name collisions. Global query filters apply to the
-subquery too; call `ignoreQueryFilters()` on it to opt out. Calling
+across both queries without name collisions. Each source resolves global query
+filters in its owning context when the query executes, so different contexts
+retain their own filters and captured values stay current. Call
+`ignoreQueryFilters()` on the subquery to opt out. Calling
 `ignoreQueryFilters()` on the composed outer query also affects its subqueries.
 The outer query supports further filters, ordering, and bulk update/delete
 (subject to the database's restrictions on modifying a table read by a subquery).

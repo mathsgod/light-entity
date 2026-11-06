@@ -83,24 +83,29 @@ class DbContext
     public function querySource(EntityMapping $mapping, \Light\Linq\Expressions\Expression $source): \Light\Linq\Expressions\Expression
     {
         $this->ensureModelCreated();
-        return new \Light\Entity\Sql\EntityQuerySourceExpression($mapping, $source);
+        return new \Light\Entity\Sql\EntityQuerySourceExpression($mapping, $source, filterResolver: $this->resolveQueryFilters(...));
     }
 
     private function prepareQuery(\Light\Linq\Expressions\Expression $expression): \Light\Linq\Expressions\Expression
     {
         $this->ensureModelCreated();
-        return QueryFilterRewriter::rewrite($expression, function (\Light\Entity\Sql\EntityQuerySourceExpression $source) {
-            $query = new Queryable($this->provider, $source->source);
-            foreach ($this->modelBuilder->filters($source->mapping->class) as $name => $filter) {
-                if ($source->ignoredFilters === null || in_array($name, $source->ignoredFilters, true)) { continue; }
-                $predicate = $filter instanceof \Closure ? $filter($this) : $filter;
-                if (is_array($predicate)) { $predicate = WhereFilter::parse($source->mapping->convertFilter($predicate)); }
-                elseif ($predicate instanceof \Light\Linq\Expressions\ValueExpression) { $predicate = $source->mapping->convertPredicate($predicate); }
-                else { throw new \LogicException('A query filter must return a condition map or ValueExpression.'); }
-                $query = $query->where($predicate);
-            }
-            return $query->expression();
-        });
+        return QueryFilterRewriter::rewrite($expression, fn (\Light\Entity\Sql\EntityQuerySourceExpression $source) =>
+            ($source->filterResolver ?? $this->resolveQueryFilters(...))($source));
+    }
+
+    /** Each source resolves filters in its owning context, including cross-context subqueries. */
+    private function resolveQueryFilters(\Light\Entity\Sql\EntityQuerySourceExpression $source): \Light\Linq\Expressions\Expression
+    {
+        $query = new Queryable($this->provider, $source->source);
+        foreach ($this->modelBuilder->filters($source->mapping->class) as $name => $filter) {
+            if ($source->ignoredFilters === null || in_array($name, $source->ignoredFilters, true)) { continue; }
+            $predicate = $filter instanceof \Closure ? $filter($this) : $filter;
+            if (is_array($predicate)) { $predicate = WhereFilter::parse($source->mapping->convertFilter($predicate)); }
+            elseif ($predicate instanceof \Light\Linq\Expressions\ValueExpression) { $predicate = $source->mapping->convertPredicate($predicate); }
+            else { throw new \LogicException('A query filter must return a condition map or ValueExpression.'); }
+            $query = $query->where($predicate);
+        }
+        return $query->expression();
     }
 
     /** Apply target-entity filters to IncludeLoader's collation-aware batch SQL. @internal */
