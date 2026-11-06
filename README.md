@@ -1315,11 +1315,10 @@ existing NULL handling.
 
 ### Closure queries: Contains and Any
 
-This development checkout references `../light-linq` using a Composer path
-repository and a symlink. Keep the sibling checkout present when running
-`composer install`; it supplies the new `Light\Linq\Expressions` namespace and
-closure translator. Once that LINQ version is released, replace the local path
-repository and `^1.0@dev` development requirement with the published version.
+Requires the published `mathsgod/light-linq` v1.1.0 or later within the 1.x
+series (`^1.1`). Install dependencies with `composer install`; a sibling LINQ
+checkout or local path repository is not required. This version supplies the
+`Light\Linq\Expressions` namespace and closure translator.
 
 `DbSet::where()` and `select()` now accept the restricted query closures
 supported by light-linq:

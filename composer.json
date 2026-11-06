@@ -6,7 +6,7 @@
     "require": {
         "php": ">=8.3",
         "ext-pdo": "*",
-        "mathsgod/light-linq": "^1.0@dev"
+        "mathsgod/light-linq": "^1.1"
     },
     "autoload": {
         "psr-4": {
@@ -25,17 +25,5 @@
         "psr-4": {
             "Light\\Entity\\Tests\\": "tests/"
         }
-    },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../light-linq",
-            "options": {
-                "symlink": true,
-                "versions": {
-                    "mathsgod/light-linq": "1.0.x-dev"
-                }
-            }
-        }
-    ]
+    }
 }
