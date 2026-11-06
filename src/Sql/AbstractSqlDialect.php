@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression, ScalarFunctionExpression};
 
 use Light\Linq\Expressions\AggregateExpression;
 use Light\Linq\Expressions\BinaryExpression;
@@ -308,6 +308,7 @@ abstract class AbstractSqlDialect implements SqlDialect
             $expression instanceof CoalesceExpression => 'COALESCE('.$this->value($expression->left).', '.$this->value($expression->right).')',
             $expression instanceof ConditionalExpression => '(CASE WHEN '.$this->value($expression->test)
                 .' THEN '.$this->value($expression->ifTrue).' ELSE '.$this->value($expression->ifFalse).' END)',
+            $expression instanceof ScalarFunctionExpression => $this->scalarFunction($expression),
             $expression instanceof ConstantExpression => $this->parameter($expression->value),
             $expression instanceof FunctionExpression => $this->functionName($expression->definition)
                 .'('.implode(', ', array_map($this->value(...), $expression->arguments)).')',
@@ -324,6 +325,57 @@ abstract class AbstractSqlDialect implements SqlDialect
             ),
             default => throw new \LogicException('Unsupported SQL value expression: '.$expression::class),
         };
+    }
+
+    private function scalarFunction(ScalarFunctionExpression $expression): string
+    {
+        $value = $this->value($expression->arguments[0]);
+        return match ($expression->function) {
+            'strtolower' => 'LOWER('.$value.')',
+            'strtoupper' => 'UPPER('.$value.')',
+            'strlen' => match (true) {
+                $this instanceof SqliteDialect => 'LENGTH(CAST('.$value.' AS BLOB))',
+                $this instanceof SqlServerDialect => 'DATALENGTH('.$value.')',
+                $this instanceof PostgreSqlDialect => 'OCTET_LENGTH('.$value.')',
+                default => 'LENGTH('.$value.')',
+            },
+            'trim' => $this->trimFunction($value),
+            'abs' => 'ABS('.$value.')',
+            'round' => $this->roundFunction($value, $expression->arguments[1]->value ?? 0),
+        };
+    }
+
+    private function trimFunction(string $value): string
+    {
+        // PHP 8.3-8.5 whitespace set. PostgreSQL text cannot contain NUL;
+        // SQLite and SQL Server trim support the remaining five characters.
+        if ($this instanceof MySqlDialect) {
+            $characters = " \t\n\r\0\x0B";
+            return 'REGEXP_REPLACE('.$value.', '.$this->parameter('^['.$characters.']+|['.$characters.']+$').", '')";
+        }
+        $characters = $this->parameter(" \t\n\r\x0B");
+        return match (true) {
+            $this instanceof PostgreSqlDialect => 'BTRIM('.$value.', '.$characters.')',
+            $this instanceof SqlServerDialect => 'TRIM('.$characters.' FROM '.$value.')',
+            default => 'TRIM('.$value.', '.$characters.')',
+        };
+    }
+
+    private function roundFunction(string $value, int $precision): string
+    {
+        if ($this instanceof SqliteDialect && $precision < 0) {
+            $factor = 10.0 ** -$precision;
+            if (!is_finite($factor)) {
+                throw new \LogicException('SQLite negative round precision must be at least -308.');
+            }
+            // SQLite treats a negative native ROUND precision as zero. Scale explicitly.
+            return '(ROUND('.$value.' / '.$this->parameter($factor).', 0) * '.$this->parameter($factor).')';
+        }
+        if ($this instanceof PostgreSqlDialect) {
+            // The two-argument PostgreSQL overload requires numeric, not double precision.
+            return 'ROUND(CAST('.$value.' AS NUMERIC), CAST('.$this->parameter($precision).' AS INTEGER))';
+        }
+        return 'ROUND('.$value.', '.$this->parameter($precision).')';
     }
 
     private function stringPattern(StringPatternExpression $expression): string
@@ -384,7 +436,7 @@ abstract class AbstractSqlDialect implements SqlDialect
     {
         return $selection instanceof FieldExpression || $selection instanceof FunctionExpression
             || $selection instanceof AggregateExpression || $selection instanceof CoalesceExpression
-            || $selection instanceof ConditionalExpression;
+            || $selection instanceof ConditionalExpression || $selection instanceof ScalarFunctionExpression;
     }
 
 }

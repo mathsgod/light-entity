@@ -1359,6 +1359,27 @@ Only documented query syntax is translated. A readable PHP source file is
 required, and unsupported syntax raises `ClosureTranslationException` without
 automatically switching to client-side filtering.
 
+### Scalar functions in query closures
+
+```php
+$db->set(Customers::class)
+    ->where(fn($c) => strtolower(trim($c->name)) == 'alice')
+    ->select(fn($c) => ['name' => strtoupper($c->name), 'bytes' => strlen($c->name)]);
+
+$db->set(Orders::class)->select(fn($o) => round(abs($o->balance), 2));
+```
+
+Supported scalar calls are `strtolower`, `strtoupper`, `trim`, `strlen`, `abs`,
+and `round`. They form `ScalarFunctionExpression` nodes and compile to built-in
+SQL operations. `strlen` counts storage bytes, including trailing spaces, using
+`LENGTH` / `OCTET_LENGTH` / `DATALENGTH` according to dialect. It is not a
+Unicode character count; different storage encodings may give different counts.
+
+`round` accepts an optional constant integer precision; custom rounding modes
+and trim masks are unsupported. Null inputs produce NULL. Case conversion,
+whitespace, numeric precision and result types have documented provider
+boundaries; see [Scalar functions](docs/closure-translation.md#scalar-functions).
+
 ### Null fallback and conditional projections
 
 ```php

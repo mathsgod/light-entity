@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression, ScalarFunctionExpression};
 
 use Light\Linq\Expressions\{Expression, AnyExpression, ContainsExpression, BinaryExpression, LogicalExpression, MethodCallExpression, ProjectionExpression, AggregateExpression};
 
@@ -22,6 +22,9 @@ final class QueryExpressionTranslator
         }
         if ($expression instanceof StringPatternExpression) {
             return new StringPatternExpression(self::translate($expression->needle), $expression->operation);
+        }
+        if ($expression instanceof ScalarFunctionExpression) {
+            return new ScalarFunctionExpression($expression->function, array_map(self::translate(...), $expression->arguments));
         }
         if ($expression instanceof CoalesceExpression) {
             return new CoalesceExpression(self::translate($expression->left), self::translate($expression->right));

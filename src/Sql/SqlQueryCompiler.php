@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
-use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression, ScalarFunctionExpression};
 
 use Light\Linq\Expressions\Expression;
 use Light\Linq\Expressions\AggregateExpression;
@@ -387,7 +387,7 @@ final readonly class SqlQueryCompiler
             $this->validateValue($value->test, $grouped);
             $this->validateValue($value->ifTrue, $grouped);
             $this->validateValue($value->ifFalse, $grouped);
-        } elseif ($value instanceof ProjectionExpression || $value instanceof FunctionExpression) {
+        } elseif ($value instanceof ProjectionExpression || $value instanceof FunctionExpression || $value instanceof ScalarFunctionExpression) {
             foreach ($value instanceof ProjectionExpression ? $value->members : $value->arguments as $child) {
                 $this->validateValue($child, $grouped);
             }
@@ -439,6 +439,10 @@ final readonly class SqlQueryCompiler
             return new ConditionalExpression($this->resolveGrouped($value->test, $key, $operand),
                 $this->resolveGrouped($value->ifTrue, $key, $operand), $this->resolveGrouped($value->ifFalse, $key, $operand));
         }
+        if ($value instanceof ScalarFunctionExpression) {
+            return new ScalarFunctionExpression($value->function,
+                array_map(fn ($argument) => $this->resolveGrouped($argument, $key, $operand), $value->arguments));
+        }
         if ($value instanceof FunctionExpression) {
             return new FunctionExpression($value->definition,
                 array_map(fn ($v) => $this->resolveGrouped($v, $key, $operand), $value->arguments));
@@ -482,6 +486,8 @@ final readonly class SqlQueryCompiler
             $expression instanceof ConditionalExpression => new ConditionalExpression(
                 $this->qualify($expression->test, $alias), $this->qualify($expression->ifTrue, $alias),
                 $this->qualify($expression->ifFalse, $alias)),
+            $expression instanceof ScalarFunctionExpression => new ScalarFunctionExpression($expression->function,
+                array_map(fn ($argument) => $this->qualify($argument, $alias), $expression->arguments)),
             $expression instanceof FunctionExpression => new FunctionExpression(
                 $expression->definition,
                 array_map(fn ($argument) => $this->qualify($argument, $alias), $expression->arguments),
@@ -503,7 +509,7 @@ final readonly class SqlQueryCompiler
     {
         return $selection instanceof FieldExpression || $selection instanceof FunctionExpression
             || $selection instanceof AggregateExpression || $selection instanceof CoalesceExpression
-            || $selection instanceof ConditionalExpression;
+            || $selection instanceof ConditionalExpression || $selection instanceof ScalarFunctionExpression;
     }
 
 }

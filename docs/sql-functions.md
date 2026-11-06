@@ -137,3 +137,11 @@ Supported: scalar calls in predicates, ordering, scalar/named projections, and j
 Not provided: table-valued functions, stored-procedure execution through this API, arbitrary SQL fragments, automatic function creation, client-side evaluation, or automatic translation of ordinary PHP function calls.
 
 `FunctionExpression` implements the existing light-linq `ValueExpression` interface but is SQL-specific. The in-memory query provider rejects it rather than attempting to invoke a PHP function.
+
+## Built-in functions in query closures
+
+PHP-style scalar calls such as `strtolower($c->name)`, `strlen($c->name)`,
+`abs($o->balance)`, and `round($o->balance, 2)` are translated separately as
+`ScalarFunctionExpression` nodes. They do not require database-function
+registration. See [Closure translation: scalar functions](closure-translation.md#scalar-functions)
+for supported signatures, SQL mappings and provider semantics.

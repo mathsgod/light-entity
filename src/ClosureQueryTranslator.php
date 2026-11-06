@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Light\Entity;
 
-use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression, ScalarFunctionExpression};
 
 use Light\Linq\{ClosureTranslator, IQueryable, IQueryProvider};
 use Light\Linq\Expressions\{Expression, ValueExpression, AnyExpression, BinaryExpression, LogicalExpression, MethodCallExpression, NotExpression};
@@ -44,6 +44,10 @@ final class ClosureQueryTranslator
             return new \Light\Linq\Expressions\StringMatchExpression(
                 self::convert($value->subject, $mapping, $captured), $value->operation,
                 self::convert($value->needle, $mapping, $captured));
+        }
+        if ($value instanceof ScalarFunctionExpression) {
+            return new ScalarFunctionExpression($value->function,
+                array_map(fn ($argument) => self::convert($argument, $mapping, $captured), $value->arguments));
         }
         if ($value instanceof CoalesceExpression) {
             return new CoalesceExpression(self::convert($value->left, $mapping, $captured),
