@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Light\Entity;
 
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+
 use Light\Linq\{ClosureTranslator, IQueryable, IQueryProvider};
 use Light\Linq\Expressions\{Expression, ValueExpression, AnyExpression, BinaryExpression, LogicalExpression, MethodCallExpression, NotExpression};
 use Light\Entity\Sql\EntityQuerySourceExpression;
@@ -37,6 +39,19 @@ final class ClosureQueryTranslator
             $result = new $class(self::convert($value->left, $mapping, $captured), $value->operator,
                 self::convert($value->right, $mapping, $captured));
             return $value instanceof BinaryExpression && $mapping !== null ? $mapping->convertPredicate($result) : $result;
+        }
+        if ($value instanceof \Light\Linq\Expressions\StringMatchExpression) {
+            return new \Light\Linq\Expressions\StringMatchExpression(
+                self::convert($value->subject, $mapping, $captured), $value->operation,
+                self::convert($value->needle, $mapping, $captured));
+        }
+        if ($value instanceof CoalesceExpression) {
+            return new CoalesceExpression(self::convert($value->left, $mapping, $captured),
+                self::convert($value->right, $mapping, $captured));
+        }
+        if ($value instanceof ConditionalExpression) {
+            return new ConditionalExpression(self::convert($value->test, $mapping, $captured),
+                self::convert($value->ifTrue, $mapping, $captured), self::convert($value->ifFalse, $mapping, $captured));
         }
         if ($value instanceof NotExpression) { return new NotExpression(self::convert($value->operand, $mapping, $captured)); }
         return $value;

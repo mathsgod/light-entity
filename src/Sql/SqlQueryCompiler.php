@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+
 use Light\Linq\Expressions\Expression;
 use Light\Linq\Expressions\AggregateExpression;
 use Light\Linq\Expressions\GroupKeyExpression;
@@ -138,8 +140,7 @@ final readonly class SqlQueryCompiler
                 || ($joinedProjection && $operation->method === 'groupBy')
                 || ($paginationStarted && in_array($operation->method, ['distinct', 'groupBy'], true))
                 || ($operation->method === 'groupBy' && $plan->selection !== null)) {
-                $scalar = $plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
-                    || $plan->selection instanceof AggregateExpression;
+                $scalar = $this->isScalarSelection($plan->selection);
                 if ($scalar && $operation->method !== 'distinct') {
                     throw new \LogicException('Use a named projection before composing field-based operators.');
                 }
@@ -178,10 +179,8 @@ final readonly class SqlQueryCompiler
 
             if (in_array($operation->method, ['join', 'leftJoin', 'selectMany'], true)) {
                 $inner = $this->plan($operation->arguments['inner']);
-                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
-                    || $plan->selection instanceof AggregateExpression
-                    || $inner->selection instanceof FieldExpression || $inner->selection instanceof FunctionExpression
-                    || $inner->selection instanceof AggregateExpression) {
+                if ($this->isScalarSelection($plan->selection)
+                    || $this->isScalarSelection($inner->selection)) {
                     throw new \LogicException('Join sources must return rows; use a named projection instead of a scalar selection.');
                 }
                 $joined = new QueryPlan('__linq_outer');
@@ -204,7 +203,7 @@ final readonly class SqlQueryCompiler
             }
             // Subsequent operators address the projected JOIN result, not its sources.
             if ($joinedProjection && in_array($operation->method, ['where', 'orderBy', 'select'], true)) {
-                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression) {
+                if ($this->isScalarSelection($plan->selection)) {
                     throw new \LogicException('Use a named JOIN projection before composing field-based operators.');
                 }
                 $wrapped = new QueryPlan('__linq_result');
@@ -263,7 +262,7 @@ final readonly class SqlQueryCompiler
     private function setColumns(?ValueExpression $selection): array
     {
         if ($selection instanceof ProjectionExpression) return array_keys($selection->members);
-        if ($selection instanceof FieldExpression || $selection instanceof FunctionExpression || $selection instanceof AggregateExpression) {
+        if ($this->isScalarSelection($selection)) {
             return ['__linq_value'];
         }
         throw new \LogicException('SQL set operations require explicit scalar or named projections on both sources.');
@@ -285,8 +284,7 @@ final readonly class SqlQueryCompiler
             }
             $plan->aggregateSelector = $selector;
         } elseif ($method === 'contains') {
-            if (!$plan->selection instanceof FieldExpression && !$plan->selection instanceof FunctionExpression
-                && !$plan->selection instanceof AggregateExpression) {
+            if (!$this->isScalarSelection($plan->selection)) {
                 throw new \LogicException('contains() requires a scalar projection.');
             }
             $value = $expression->arguments['value'];
@@ -300,8 +298,7 @@ final readonly class SqlQueryCompiler
             if ($plan->groupKey !== null && $plan->selection === null && $plan->limit === null && $plan->offset === null) {
                 $plan->havingPredicates[] = $this->resolveGrouped($predicate, $plan->groupKey);
             } elseif ($plan->selection !== null || $plan->limit !== null || $plan->offset !== null || $plan->innerPlan !== null) {
-                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
-                    || $plan->selection instanceof AggregateExpression) {
+                if ($this->isScalarSelection($plan->selection)) {
                     throw new \LogicException('Use a named projection before a field-based terminal predicate.');
                 }
                 $wrapped = new QueryPlan('__linq_result');
@@ -325,8 +322,7 @@ final readonly class SqlQueryCompiler
             if ($plan->limit !== null || $plan->offset !== null) {
                 $wrapped = new QueryPlan('__linq_result');
                 $wrapped->sourcePlan = $plan;
-                if ($plan->selection instanceof FieldExpression || $plan->selection instanceof FunctionExpression
-                    || $plan->selection instanceof AggregateExpression) {
+                if ($this->isScalarSelection($plan->selection)) {
                     $wrapped->selection = new FieldExpression('__linq_value');
                 }
                 foreach ($plan->orderings as $ordering) {
@@ -384,6 +380,13 @@ final readonly class SqlQueryCompiler
         } elseif ($value instanceof BinaryExpression || $value instanceof LogicalExpression) {
             $this->validateValue($value->left, $grouped);
             $this->validateValue($value->right, $grouped);
+        } elseif ($value instanceof CoalesceExpression) {
+            $this->validateValue($value->left, $grouped);
+            $this->validateValue($value->right, $grouped);
+        } elseif ($value instanceof ConditionalExpression) {
+            $this->validateValue($value->test, $grouped);
+            $this->validateValue($value->ifTrue, $grouped);
+            $this->validateValue($value->ifFalse, $grouped);
         } elseif ($value instanceof ProjectionExpression || $value instanceof FunctionExpression) {
             foreach ($value instanceof ProjectionExpression ? $value->members : $value->arguments as $child) {
                 $this->validateValue($child, $grouped);
@@ -393,6 +396,11 @@ final readonly class SqlQueryCompiler
         } elseif ($value instanceof InExpression) {
             $this->validateValue($value->item, $grouped);
             $this->subqueryPlan($value->subquery);
+        } elseif ($value instanceof LikeExpression) {
+            $this->validateValue($value->match, $grouped);
+            $this->validateValue($value->pattern, $grouped);
+        } elseif ($value instanceof StringPatternExpression) {
+            $this->validateValue($value->needle, $grouped);
         } elseif ($value instanceof NotExpression) $this->validateValue($value->operand, $grouped);
     }
     private function resolveGrouped(ValueExpression $value, ?ValueExpression $key, bool $operand = false): ValueExpression
@@ -423,9 +431,24 @@ final readonly class SqlQueryCompiler
             return new $class($this->resolveGrouped($value->left, $key, $operand), $value->operator,
                 $this->resolveGrouped($value->right, $key, $operand));
         }
+        if ($value instanceof CoalesceExpression) {
+            return new CoalesceExpression($this->resolveGrouped($value->left, $key, $operand),
+                $this->resolveGrouped($value->right, $key, $operand));
+        }
+        if ($value instanceof ConditionalExpression) {
+            return new ConditionalExpression($this->resolveGrouped($value->test, $key, $operand),
+                $this->resolveGrouped($value->ifTrue, $key, $operand), $this->resolveGrouped($value->ifFalse, $key, $operand));
+        }
         if ($value instanceof FunctionExpression) {
             return new FunctionExpression($value->definition,
                 array_map(fn ($v) => $this->resolveGrouped($v, $key, $operand), $value->arguments));
+        }
+        if ($value instanceof LikeExpression) {
+            return new LikeExpression($this->resolveGrouped($value->match, $key, $operand),
+                $this->resolveGrouped($value->pattern, $key, $operand), $value->escape);
+        }
+        if ($value instanceof StringPatternExpression) {
+            return new StringPatternExpression($this->resolveGrouped($value->needle, $key, $operand), $value->operation);
         }
         if ($value instanceof ExistsExpression) return $value;
         if ($value instanceof InExpression) return new InExpression($this->resolveGrouped($value->item, $key, $operand), $value->subquery, $value->negated);
@@ -454,6 +477,11 @@ final readonly class SqlQueryCompiler
         return match (true) {
             $expression instanceof FieldExpression => new FieldExpression($alias.'.'.$expression->path),
             $expression instanceof ConstantExpression => $expression,
+            $expression instanceof CoalesceExpression => new CoalesceExpression(
+                $this->qualify($expression->left, $alias), $this->qualify($expression->right, $alias)),
+            $expression instanceof ConditionalExpression => new ConditionalExpression(
+                $this->qualify($expression->test, $alias), $this->qualify($expression->ifTrue, $alias),
+                $this->qualify($expression->ifFalse, $alias)),
             $expression instanceof FunctionExpression => new FunctionExpression(
                 $expression->definition,
                 array_map(fn ($argument) => $this->qualify($argument, $alias), $expression->arguments),
@@ -471,4 +499,11 @@ final readonly class SqlQueryCompiler
             default => throw new \LogicException('Unsupported join key expression.'),
         };
     }
+    private function isScalarSelection(?ValueExpression $selection): bool
+    {
+        return $selection instanceof FieldExpression || $selection instanceof FunctionExpression
+            || $selection instanceof AggregateExpression || $selection instanceof CoalesceExpression
+            || $selection instanceof ConditionalExpression;
+    }
+
 }

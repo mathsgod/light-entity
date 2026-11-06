@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+
 use Light\Linq\Expressions\AggregateExpression;
 use Light\Linq\Expressions\BinaryExpression;
 use Light\Linq\Expressions\ConstantExpression;
@@ -75,9 +77,9 @@ abstract class AbstractSqlDialect implements SqlDialect
             'count' => 'count',
             'any' => 'any',
             'all', 'contains' => 'boolean',
-            'firstOrDefault', 'single', 'singleOrDefault', 'last', 'lastOrDefault' => $terminal.'-'.($query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar' : 'row'),
-            'first' => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'first-scalar' : 'first-row',
-            default => $query->selection instanceof FieldExpression || $query->selection instanceof FunctionExpression || $query->selection instanceof AggregateExpression ? 'scalar-list' : 'rows',
+            'firstOrDefault', 'single', 'singleOrDefault', 'last', 'lastOrDefault' => $terminal.'-'.($this->isScalarSelection($query->selection) ? 'scalar' : 'row'),
+            'first' => $this->isScalarSelection($query->selection) ? 'first-scalar' : 'first-row',
+            default => $this->isScalarSelection($query->selection) ? 'scalar-list' : 'rows',
         };
 
         if (in_array($terminal, ['first', 'firstOrDefault', 'single', 'singleOrDefault', 'last', 'lastOrDefault'], true)) {
@@ -260,7 +262,7 @@ abstract class AbstractSqlDialect implements SqlDialect
         if ($selection === null) {
             return '*';
         }
-        if ($selection instanceof FieldExpression || $selection instanceof FunctionExpression || $selection instanceof AggregateExpression) {
+        if ($this->isScalarSelection($selection)) {
             return $this->value($selection)
                 .' AS '.$this->quoteIdentifier('__linq_value');
         }
@@ -303,9 +305,16 @@ abstract class AbstractSqlDialect implements SqlDialect
             $expression instanceof NotExpression => '(NOT '.$this->value($expression->operand).')',
             // Newline keeps a trailing line comment inside the expression's parentheses.
             $expression instanceof RawSqlPredicateExpression, $expression instanceof RawSqlValueExpression => '('.(new RawSqlParser())->compile($expression, $this->parameter(...), $this)."\n)",
+            $expression instanceof CoalesceExpression => 'COALESCE('.$this->value($expression->left).', '.$this->value($expression->right).')',
+            $expression instanceof ConditionalExpression => '(CASE WHEN '.$this->value($expression->test)
+                .' THEN '.$this->value($expression->ifTrue).' ELSE '.$this->value($expression->ifFalse).' END)',
             $expression instanceof ConstantExpression => $this->parameter($expression->value),
             $expression instanceof FunctionExpression => $this->functionName($expression->definition)
                 .'('.implode(', ', array_map($this->value(...), $expression->arguments)).')',
+            $expression instanceof LikeExpression => '('.$this->value($expression->match).' LIKE '
+                .$this->value($expression->pattern)
+                .($expression->escape === null ? '' : ' ESCAPE '.$this->parameter($expression->escape)).')',
+            $expression instanceof StringPatternExpression => $this->stringPattern($expression),
             $expression instanceof BinaryExpression => '('.$this->value($expression->left).' '
                 .$expression->operator.' '.$this->value($expression->right).')',
             $expression instanceof LogicalExpression => '('.$this->value($expression->left).' '
@@ -315,6 +324,26 @@ abstract class AbstractSqlDialect implements SqlDialect
             ),
             default => throw new \LogicException('Unsupported SQL value expression: '.$expression::class),
         };
+    }
+
+    private function stringPattern(StringPatternExpression $expression): string
+    {
+        if ($expression->needle instanceof ConstantExpression && is_string($expression->needle->value)) {
+            $pattern = strtr($expression->needle->value, ['!' => '!!', '%' => '!%', '_' => '!_', '[' => '![']);
+            return $this->parameter(
+                ($expression->operation === 'startsWith' ? '' : '%').$pattern
+                .($expression->operation === 'endsWith' ? '' : '%'));
+        }
+        $needle = $this->value($expression->needle);
+        foreach (['!' => '!!', '%' => '!%', '_' => '!_', '[' => '!['] as $from => $to) {
+            $needle = 'REPLACE('.$needle.', '.$this->parameter($from).', '.$this->parameter($to).')';
+        }
+        $parts = [];
+        if ($expression->operation !== 'startsWith') { $parts[] = $this->parameter('%'); }
+        $parts[] = $needle;
+        if ($expression->operation !== 'endsWith') { $parts[] = $this->parameter('%'); }
+        return $this instanceof MySqlDialect ? 'CONCAT('.implode(', ', $parts).')'
+            : '('.implode($this instanceof SqlServerDialect ? ' + ' : ' || ', $parts).')';
     }
 
     private function outerField(\Light\Linq\Expressions\OuterFieldExpression $field): string
@@ -351,4 +380,11 @@ abstract class AbstractSqlDialect implements SqlDialect
         $this->parameters[$name] = $value;
         return $this->parameterSql(':'.$name, $value);
     }
+    private function isScalarSelection(?ValueExpression $selection): bool
+    {
+        return $selection instanceof FieldExpression || $selection instanceof FunctionExpression
+            || $selection instanceof AggregateExpression || $selection instanceof CoalesceExpression
+            || $selection instanceof ConditionalExpression;
+    }
+
 }

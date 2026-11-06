@@ -1334,6 +1334,62 @@ Correlated queries are supported through the closure `any()` syntax below. The e
 filter `['id' => ['in' => [1, 2, 3]]]` continues to support value lists with its
 existing NULL handling.
 
+### Closure translation
+
+Query closures are parsed from PHP source into expression trees, then compiled
+into parameterized SQL. The translator never invokes them to filter entities
+in PHP. Query execution remains deferred until enumeration or a terminal method.
+See [Closure translation](docs/closure-translation.md) for supported syntax,
+SQL examples, parameter binding, and limitations.
+
+```php
+$db->set(Customers::class)
+    ->where(fn($c) => str_starts_with($c->name, 'a'));
+
+$db->set(Orders::class)
+    ->where(fn($o) => $o->total + $o->tax >= 30);
+```
+
+The first predicate is conceptually `WHERE name LIKE 'a%'`. Actual SQL uses
+`WHERE (name LIKE :p0 ESCAPE :p1)`, with `p0 = 'a%'` and `p1 = '!'`, plus
+identifier quoting for the database dialect. Arithmetic becomes nested
+`BinaryExpression` nodes; string matching becomes SQL `LikeExpression`.
+
+Only documented query syntax is translated. A readable PHP source file is
+required, and unsupported syntax raises `ClosureTranslationException` without
+automatically switching to client-side filtering.
+
+### Null fallback and conditional projections
+
+```php
+$db->set(Orders::class)->select(fn($o) => [
+    'customer' => $o->customer_name ?? 'Guest',
+    'size' => $o->total >= 100 ? 'large' : 'small',
+]);
+```
+
+`??` becomes `CoalesceExpression` and SQL `COALESCE`; full ternary becomes
+`ConditionalExpression` and SQL `CASE WHEN ... THEN ... ELSE ... END`.
+Constants use bound parameters. Fallback applies only to NULL, preserving zero,
+false, and empty strings. Nesting and scalar selections are supported; shorthand
+`?:` is rejected. Conditions and branch types must be valid for the SQL provider.
+See [Closure translation](docs/closure-translation.md#coalesce-and-conditional-expressions).
+
+### String matching in query closures
+
+```php
+$db->set(Customers::class)->where(fn($c) => str_starts_with($c->name, 'a'));
+$db->set(Customers::class)->where(fn($c) => str_ends_with($c->name, 'z'));
+$db->set(Customers::class)->where(fn($c) => str_contains($c->name, $needle));
+```
+
+Use a compatible `light-linq` version with `StringMatchExpression` support.
+The SQL translator lowers these operations to `LikeExpression`, escaping literal
+`%`, `_`, `!`, and `[` before adding wildcards. Search strings are parameterized;
+field-valued needles are escaped in SQL using `REPLACE`. Nulls follow SQL's
+three-valued predicate logic. Case sensitivity follows the database collation
+and may differ from PHP's case-sensitive in-memory matching.
+
 ### Closure queries: Contains and Any
 
 Requires the published `mathsgod/light-linq` v1.1.0 or later within the 1.x

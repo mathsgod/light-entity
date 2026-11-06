@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Light\Entity\Sql;
 
+use Light\Linq\Expressions\{CoalesceExpression, ConditionalExpression};
+
 use Light\Linq\Expressions\{Expression, AnyExpression, ContainsExpression, BinaryExpression, LogicalExpression, MethodCallExpression, ProjectionExpression, AggregateExpression};
 
 /** Lowers LINQ operations to SQL nodes before relational planning. @internal */
@@ -11,6 +13,23 @@ final class QueryExpressionTranslator
 {
     public static function translate(Expression $expression): Expression
     {
+        if ($expression instanceof \Light\Linq\Expressions\StringMatchExpression) {
+            return new LikeExpression(self::translate($expression->subject),
+                new StringPatternExpression(self::translate($expression->needle), $expression->operation), '!');
+        }
+        if ($expression instanceof LikeExpression) {
+            return new LikeExpression(self::translate($expression->match), self::translate($expression->pattern), $expression->escape);
+        }
+        if ($expression instanceof StringPatternExpression) {
+            return new StringPatternExpression(self::translate($expression->needle), $expression->operation);
+        }
+        if ($expression instanceof CoalesceExpression) {
+            return new CoalesceExpression(self::translate($expression->left), self::translate($expression->right));
+        }
+        if ($expression instanceof ConditionalExpression) {
+            return new ConditionalExpression(self::translate($expression->test),
+                self::translate($expression->ifTrue), self::translate($expression->ifFalse));
+        }
         if ($expression instanceof AnyExpression) { return new ExistsExpression(self::translate($expression->source)); }
         if ($expression instanceof ContainsExpression) {
             return new InExpression(self::translate($expression->item), self::translate($expression->source));
