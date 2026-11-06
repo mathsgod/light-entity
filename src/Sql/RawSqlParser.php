@@ -7,10 +7,10 @@ namespace Light\Entity\Sql;
 /** Lexes SQL literals/comments before validating and renaming parameter markers. */
 final class RawSqlParser
 {
-    public function compile(RawSqlSourceExpression|RawSqlPredicateExpression $source, callable $bind, SqlDialect $dialect): string
+    public function compile(RawSqlSourceExpression|RawSqlPredicateExpression|RawSqlValueExpression $source, callable $bind, SqlDialect $dialect): string
     {
         $sql = $source->sql;
-        $predicate = $source instanceof RawSqlPredicateExpression;
+        $fragment = !($source instanceof RawSqlSourceExpression);
         $positional = array_is_list($source->parameters);
         $parameters = [];
         foreach ($source->parameters as $name => $value) {
@@ -57,7 +57,7 @@ final class RawSqlParser
                 continue;
             }
             if (!$started) {
-                if (!$predicate && !preg_match('/\GSELECT\b/i', $sql, $match, 0, $i)) {
+                if (!$fragment && !preg_match('/\GSELECT\b/i', $sql, $match, 0, $i)) {
                     throw new \InvalidArgumentException('Raw SQL must start with a single composable SELECT.');
                 }
                 $started = true;

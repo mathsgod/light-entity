@@ -267,6 +267,18 @@ final readonly class DbSet implements IQueryable, \Countable
         return $this->with($this->query->orderByDescending($keySelector));
     }
 
+    /** Start ordering by a trusted scalar SQL expression with bound provider values. */
+    public function orderByRaw(string $sql, array $parameters = [], bool $descending = false): self
+    {
+        $value = new \Light\Entity\Sql\RawSqlValueExpression($sql, $parameters);
+        return $descending ? $this->orderByDescending($value) : $this->orderBy($value);
+    }
+    /** Append a trusted scalar SQL expression to an existing ordering. */
+    public function thenByRaw(string $sql, array $parameters = [], bool $descending = false): self
+    {
+        $value = new \Light\Entity\Sql\RawSqlValueExpression($sql, $parameters);
+        return $descending ? $this->thenByDescending($value) : $this->thenBy($value);
+    }
     public function thenBy(ValueExpression $keySelector): self
     {
         return $this->with($this->query->thenBy($keySelector));

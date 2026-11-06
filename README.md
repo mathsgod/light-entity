@@ -735,6 +735,25 @@ argument-count validation. Mappings are context-scoped and do not create the dat
 See [Scalar SQL Functions](docs/sql-functions.md) for wrappers, parameter types,
 dialect differences, and limitations.
 
+## Raw SQL ordering
+
+`orderByRaw()` starts a new primary ordering; `thenByRaw()` appends a secondary
+ordering. Both accept a trusted scalar SQL expression, positional or named
+provider-value parameters, and `descending` (default `false`). They compose
+with ordinary ordering and leave the original DbSet unchanged.
+
+```php
+$groups = $db->set(IPGroup::class)->orderByRaw(
+    '(SELECT name FROM DataCenter WHERE DataCenter.datacenter_id = IPGroup.datacenter_id)',
+    parameters: [],
+    descending: false,
+)->thenByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', ['active'])->toArray();
+```
+
+Supply the expression without `ORDER BY` or `ASC`/`DESC`. Identifiers refer to
+SQL table/column names, not mapped property names. Parameter binding and fragment
+validation follow the same rules as `whereRaw()` below.
+
 ## Raw SQL conditions
 
 Use `whereRaw()` for a database-specific condition or subquery without repeating
