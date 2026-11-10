@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 — 2026-11-10
 
 ### Complex properties
 
@@ -17,12 +17,13 @@
 - Add SQLite, dialect compilation and MySQL integration coverage and document
   the initial feature scope in `docs/complex-properties.md`.
 
-### Breaking inheritance convention
+### Entity inheritance (TPH)
 
 - Infer table-per-hierarchy mappings for inherited Entity classes, using the
-  root table and a string `Discriminator` column by default. This convention
-  change requires a major release; existing independent table mappings require
-  migration or explicit EntityMapping objects.
+  root table and a string `Discriminator` column by default. This ships in
+  v1.3.0 as an explicit compatibility-policy exception: the previous inherited
+  entity convention had not been used in current applications. Code relying on
+  separate inherited tables requires migration or explicit EntityMapping objects.
 - Materialize runtime subtypes for root queries and share tracking identity
   across the hierarchy. Preserve concrete types during no-tracking and includes.
 - Apply structural type predicates to derived queries, joins, subqueries, raw

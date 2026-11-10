@@ -121,6 +121,11 @@ must migrate their data into the shared table and populate the discriminator,
 or supply explicit `EntityMapping` objects to retain independent mappings.
 Explicit mappings remain independent; do not mix them with inferred TPH mappings of the same hierarchy.
 
-This convention change requires a major release under the project's compatibility
-policy. TPT and TPC inheritance strategies, automatic class-file discovery,
-non-string discriminators, and type changes of existing rows are not supported.
+TPH is introduced in v1.3.0 as an explicitly approved exception to the project's
+usual major-version rule for convention changes: the previous inherited-entity
+mapping had not been used in current applications. The migration requirements
+above still apply to any code that relied on separate inherited tables. Ordinary
+entities without an inheritance hierarchy need no discriminator or schema change.
+
+TPT and TPC inheritance strategies, automatic class-file discovery, non-string
+discriminators, and type changes of existing rows are not supported.

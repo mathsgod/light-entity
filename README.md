@@ -5,6 +5,12 @@ Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
 This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
+## v1.3.0
+
+Requires `mathsgod/light-linq:^1.3`. Adds default table-per-hierarchy (TPH)
+entity inheritance, opt-in complex properties, and expanded LINQ query support.
+See [CHANGELOG](CHANGELOG.md) for the release details and compatibility note.
+
 ## Complex properties
 
 Use a complex property to store a value object in its owner's table without a
@@ -94,7 +100,8 @@ Inherited `Entity` classes now use table-per-hierarchy (TPH) by default: `Cat`
 and `Dog` share the root `Animal` table, with a string `Discriminator` column.
 Derived queries filter by type; base queries materialize the corresponding PHP
 subclasses. See [Inheritance](docs/inheritance.md) for schema, configuration and
-migration requirements. This is an unreleased breaking convention change.
+migration requirements. Introduced in v1.3.0; ordinary entities without an
+inheritance hierarchy do not require a discriminator column.
 
 ## Dependency compatibility
 
@@ -140,7 +147,10 @@ operations. Use a short-lived context for each unit of work.
 
 - Documented public APIs and behavior form the compatibility contract. Breaking
   changes to those APIs, mapping conventions or supported semantics require a
-  new major version.
+  new major version. The v1.3.0 introduction of default TPH is an explicitly
+  approved exception because the previous inherited-entity convention had not
+  been used in current applications. Code relying on separate inherited tables
+  must migrate or provide explicit mappings; see [Inheritance](docs/inheritance.md).
 - Minor releases may add APIs, query operators and database capabilities while
   preserving existing supported behavior. Patch releases provide compatible
   fixes. Incorrect behavior may be corrected to match the documented contract.
