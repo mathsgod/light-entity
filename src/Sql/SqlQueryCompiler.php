@@ -110,11 +110,49 @@ final readonly class SqlQueryCompiler
         $joinedProjection = false;
         $previousMethod = null;
         foreach ($operations as $operation) {
-            if (in_array($operation->method, ['groupJoin', 'zip', 'chunk'], true)) {
+            if ($operation->method === 'skip' && $operation->arguments['count'] === 0) {
+                continue;
+            }
+            if (in_array($operation->method, ['groupJoin', 'zip', 'chunk', 'append', 'prepend', 'defaultIfEmpty',
+                'skipWhile', 'takeWhile', 'skipLast', 'takeLast', 'distinctBy', 'exceptBy',
+                'intersectBy', 'unionBy', 'countBy', 'aggregate', 'aggregateBy', 'minBy', 'maxBy'], true)) {
                 throw new \LogicException(
                     "{$operation->method}() is not supported by the SQL provider. "
                     .'Call asEnumerable() before this operation to execute it in PHP.',
                 );
+            }
+            if ($operation->method === 'order') {
+                if (!$this->isScalarSelection($plan->selection)) {
+                    throw new \LogicException('SQL order()/orderDescending() requires a scalar select().');
+                }
+                $operation = new MethodCallExpression($operation->source, 'orderBy', [
+                    'keySelector' => $plan->selection,
+                    'descending' => $operation->arguments['descending'],
+                ]);
+            }
+            if ($operation->method === 'reverse') {
+                if ($plan->orderings === []) {
+                    throw new \LogicException('SQL reverse() requires an explicit orderBy().');
+                }
+                if ($paginationStarted) {
+                    $wrapped = new QueryPlan('__linq_result');
+                    $wrapped->sourcePlan = $plan;
+                    if ($this->isScalarSelection($plan->selection)) {
+                        $wrapped->selection = new FieldExpression('__linq_value');
+                    }
+                    foreach ($plan->orderings as $ordering) {
+                        $wrapped->orderings[] = [
+                            'expression' => $this->projectedOrdering($ordering['expression'], $plan->selection),
+                            'descending' => $ordering['descending'],
+                        ];
+                    }
+                    $plan = $wrapped;
+                    $paginationStarted = $joinedProjection = false;
+                }
+                foreach ($plan->orderings as &$ordering) $ordering['descending'] = !$ordering['descending'];
+                unset($ordering);
+                $previousMethod = 'orderBy';
+                continue;
             }
             if ($operation->method === 'thenBy' && !in_array($previousMethod, ['orderBy', 'thenBy'], true)) {
                 throw new \LogicException('thenBy() requires a preceding orderBy().');
@@ -177,7 +215,7 @@ final readonly class SqlQueryCompiler
                 continue;
             }
 
-            if (in_array($operation->method, ['join', 'leftJoin', 'selectMany'], true)) {
+            if (in_array($operation->method, ['join', 'leftJoin', 'rightJoin', 'selectMany'], true)) {
                 $inner = $this->plan($operation->arguments['inner']);
                 if ($this->isScalarSelection($plan->selection)
                     || $this->isScalarSelection($inner->selection)) {
@@ -190,7 +228,9 @@ final readonly class SqlQueryCompiler
                     $joined->collectionPredicate = $operation->arguments['predicate'];
                     $joined->joinType = $joined->collectionPredicate === null ? 'CROSS' : 'INNER';
                 } else {
-                    $joined->joinType = $operation->method === 'leftJoin' ? 'LEFT' : 'INNER';
+                    $joined->joinType = match ($operation->method) {
+                        'leftJoin' => 'LEFT', 'rightJoin' => 'RIGHT', default => 'INNER',
+                    };
                     $joined->joinCondition = $this->joinCondition(
                         $operation->arguments['outerKey'], $operation->arguments['innerKey'],
                     );

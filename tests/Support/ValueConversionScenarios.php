@@ -76,6 +76,17 @@ trait ValueConversionScenarios
         return $pdo;
     }
 
+    public function testLinq130TerminalClosuresApplyProviderConversionOnlyOnce(): void
+    {
+        $accounts = $this->conversionContext($this->seededConversionConnection())->set(ConvertedAccount::class);
+        self::assertSame(1, $accounts->first(fn ($account) => $account->enabled == false)->id);
+        self::assertSame(1, $accounts->firstOrDefault(fn ($account) => $account->enabled == false)->id);
+        self::assertSame(1, $accounts->single(fn ($account) => $account->enabled == false)->id);
+        self::assertSame(1, $accounts->orderBy(Expr::field('id'))->last(fn ($account) => $account->enabled == false)->id);
+        self::assertTrue($accounts->all(fn ($account) => $account->enabled == false));
+        self::assertSame(1, $accounts->longCount(fn ($account) => $account->enabled == false));
+    }
+
     public function testConvertersHydrateTypedPropertiesAndDetectNestedMutations(): void
     {
         $pdo = $this->seededConversionConnection();

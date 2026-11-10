@@ -103,7 +103,7 @@ $db->set(Customers::class)->asEnumerable()
     ->where(fn($c) => customPhpPredicate($c));
 ```
 
-light-entity v1.2.0 requires stable light-linq `^1.2`, including arithmetic,
+The current checkout requires stable light-linq `^1.3`, including arithmetic,
 string matching, scalar, coalesce and conditional support. Update the application
 lockfile; a sibling checkout alone does not update the installed dependency. For full syntax and provider responsibilities,
 see [light-linq's closure guide](https://github.com/mathsgod/light-linq/blob/main/docs/closure-translation.md).

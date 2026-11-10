@@ -37,6 +37,44 @@ final class QueryableContext extends DbContext
 
 final class DbSetQueryableTest extends TestCase
 {
+    public function testLinq130ClosureContractsPreserveEntityMaterialization(): void
+    {
+        [, $db, $users] = $this->fixture();
+        self::assertSame([3, 2, 1], $users->orderBy(fn ($user) => $user->age)->select(Expr::field('id'))->toArray());
+        self::assertSame(1, $users->first(fn ($user) => $user->age == 30)->id);
+        self::assertSame(3, $users->orderBy(Expr::field('id'))->last(fn ($user) => $user->age < 30)->id);
+        self::assertSame(2, $users->single(fn ($user) => $user->age == 20)->id);
+        self::assertTrue($users->all(fn ($user) => $user->age >= 10));
+        self::assertSame(2, $users->longCount(fn ($user) => $user->status == 'active'));
+        self::assertSame(60, $users->sum(fn ($user) => $user->age));
+        self::assertSame([2, 1], $users->groupBy(fn ($user) => $user->status)->select(Expr::count())->toArray());
+        self::assertSame($users->find(2), $users->orderBy(fn ($user) => $user->id)->elementAt(1));
+        self::assertSame('missing', $users->orderBy(Expr::field('id'))->elementAtOrDefault(99, 'missing'));
+        self::assertSame('negative', $users->elementAtOrDefault(-1, 'negative'));
+        self::assertSame([], $users->take(1)->elementAtOrDefault(2, []));
+        self::assertSame([1, 2, 3], $users->skip(-1)->orderBy(Expr::field('id'))->select(Expr::field('id'))->toArray());
+        self::assertSame([], $users->take(-1)->toArray());
+    }
+
+    public function testLinq130UnsupportedSqlOperatorsFailWithoutClientSideFallback(): void
+    {
+        [$pdo, , $users] = $this->fixture();
+        $reads = count($pdo->reads);
+        foreach (['countBy', 'distinctBy', 'aggregateBy'] as $method) {
+            $query = match ($method) {
+                'aggregateBy' => $users->aggregateBy(Expr::field('status'), 0, Expr::field('accumulator')),
+                default => $users->$method(Expr::field('status')),
+            };
+            self::assertSame($reads, count($pdo->reads));
+            try {
+                $query->toArray();
+                self::fail('Expected unsupported SQL operator');
+            } catch (\LogicException $error) {
+                self::assertStringContainsString($method, $error->getMessage());
+            }
+            self::assertSame($reads, count($pdo->reads));
+        }
+    }
     private function fixture(): array
     {
         if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) { self::markTestSkipped('pdo_sqlite required.'); }

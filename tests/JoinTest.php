@@ -38,6 +38,21 @@ class JoinTest extends TestCase
         }
     }
 
+    public function testEveryDialectCompilesRightJoinWithOriginalSourceAliases(): void
+    {
+        $provider = new InMemoryQueryProvider([]);
+        $outer = Queryable::from($provider, 'orders')->where(Expr::gt(Expr::field('id'), 1));
+        $inner = Queryable::from($provider, 'customers');
+        $query = $outer->rightJoin($inner, fn ($order) => $order->customerId, fn ($customer) => $customer->id,
+            Expr::projection(['order' => 'outer.id', 'customer' => 'inner.id']));
+        foreach ([new MySqlDialect(), new PostgreSqlDialect(), new SqliteDialect(), new SqlServerDialect()] as $dialect) {
+            $compiled = (new SqlQueryCompiler($dialect))->compile($query->expression());
+            self::assertStringContainsString(' RIGHT JOIN ', $compiled->sql);
+            self::assertStringContainsString($dialect->quoteIdentifier('outer.customerId').' = '.$dialect->quoteIdentifier('inner.id'), $compiled->sql);
+            self::assertSame(['p0' => 1], $compiled->parameters);
+        }
+    }
+
     public function testCompositeAndNullKeysCompileAsEquality(): void
     {
         $provider = new InMemoryQueryProvider([]);

@@ -25,6 +25,19 @@ final class ClientSequenceOperatorsTest extends TestCase
             'groupJoin' => $source->groupJoin($source, Expr::field('id'), Expr::field('id'), Expr::field('inner')),
             'zip' => $source->zip($source, Expr::field('outer')),
             'chunk' => $source->chunk(2),
+            'append' => $source->append(['id' => 1]),
+            'prepend' => $source->prepend(['id' => 1]),
+            'defaultIfEmpty' => $source->defaultIfEmpty(),
+            'skipWhile' => $source->skipWhile(Expr::gt(Expr::field('id'), 0)),
+            'takeWhile' => $source->takeWhile(Expr::gt(Expr::field('id'), 0)),
+            'skipLast' => $source->skipLast(2),
+            'takeLast' => $source->takeLast(2),
+            'distinctBy' => $source->distinctBy(Expr::field('id')),
+            'exceptBy' => $source->exceptBy($source, Expr::field('id')),
+            'intersectBy' => $source->intersectBy($source, Expr::field('id')),
+            'unionBy' => $source->unionBy($source, Expr::field('id')),
+            'countBy' => $source->countBy(Expr::field('id')),
+            'aggregateBy' => $source->aggregateBy(Expr::field('id'), 0, Expr::field('accumulator')),
         ];
         foreach ([new SqliteDialect(), new MySqlDialect(), new PostgreSqlDialect(), new SqlServerDialect()] as $dialect) {
             foreach ($queries as $method => $query) {

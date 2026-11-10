@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Require `mathsgod/light-linq:^1.3` and adapt DbSet to its expanded IQueryable
+  contract, including closure-compatible selectors and predicates.
+- Forward new LINQ query operators without silently evaluating unsupported SQL
+  operations in PHP. DbSet element access enumerates the existing entity query,
+  preserving pagination, materialization and tracking.
+- Treat zero skip as a SQL no-op, including normalized negative skip counts.
+- Compile right joins, scalar identity ordering, and explicitly ordered reverse
+  queries, preserving pagination through a derived table.
+- Reject unsupported LINQ 1.3 SQL operators explicitly with an `asEnumerable()`
+  boundary, and document the implementation and provider support matrix.
+
 ## v1.2.0 — 2026-11-06
 
 - Require stable mathsgod/light-linq ^1.2.

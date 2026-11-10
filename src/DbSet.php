@@ -125,13 +125,125 @@ final readonly class DbSet implements IQueryable, \Countable
     }
 
     /** Returns projected values without tracking them as entities. */
-    public function groupBy(ValueExpression $keySelector): Queryable
+    public function groupBy(ValueExpression|\Closure $keySelector): Queryable
     {
         return $this->query->groupBy($keySelector);
     }
     public function distinct(): Queryable
     {
         return $this->query->distinct();
+    }
+
+    public function distinctBy(ValueExpression|\Closure $keySelector): Queryable
+    {
+        return $this->aggregateQuery()->distinctBy($keySelector);
+    }
+
+    public function countBy(ValueExpression|\Closure $keySelector): Queryable
+    {
+        return $this->aggregateQuery()->countBy($keySelector);
+    }
+
+    public function aggregate(ValueExpression|\Closure $accumulator, mixed $seed = null, ValueExpression|\Closure|null $resultSelector = null): mixed
+    {
+        return func_num_args() < 2 ? $this->aggregateQuery()->aggregate($accumulator)
+            : $this->aggregateQuery()->aggregate($accumulator, $seed, $resultSelector);
+    }
+
+    public function aggregateBy(ValueExpression|\Closure $keySelector, mixed $seed, ValueExpression|\Closure $accumulator): Queryable
+    {
+        return $this->aggregateQuery()->aggregateBy($keySelector, $seed, $accumulator);
+    }
+
+    public function exceptBy(IQueryable $second, ValueExpression|\Closure $keySelector): Queryable
+    {
+        return $this->aggregateQuery()->exceptBy($second, $keySelector);
+    }
+
+    public function intersectBy(IQueryable $second, ValueExpression|\Closure $keySelector): Queryable
+    {
+        return $this->aggregateQuery()->intersectBy($second, $keySelector);
+    }
+
+    public function unionBy(IQueryable $second, ValueExpression|\Closure $keySelector): Queryable
+    {
+        return $this->aggregateQuery()->unionBy($second, $keySelector);
+    }
+
+    public function minBy(ValueExpression|\Closure $keySelector): mixed
+    {
+        return $this->aggregateQuery()->minBy($keySelector);
+    }
+
+    public function maxBy(ValueExpression|\Closure $keySelector): mixed
+    {
+        return $this->aggregateQuery()->maxBy($keySelector);
+    }
+
+    public function append(mixed $value): Queryable
+    {
+        return $this->aggregateQuery()->append($value);
+    }
+
+    public function prepend(mixed $value): Queryable
+    {
+        return $this->aggregateQuery()->prepend($value);
+    }
+
+    public function reverse(): Queryable
+    {
+        return $this->aggregateQuery()->reverse();
+    }
+
+    public function defaultIfEmpty(mixed $default = null): Queryable
+    {
+        return $this->aggregateQuery()->defaultIfEmpty($default);
+    }
+
+    public function skipWhile(ValueExpression|\Closure $predicate): Queryable
+    {
+        return $this->aggregateQuery()->skipWhile($predicate);
+    }
+
+    public function takeWhile(ValueExpression|\Closure $predicate): Queryable
+    {
+        return $this->aggregateQuery()->takeWhile($predicate);
+    }
+
+    public function skipLast(int $count): Queryable
+    {
+        return $this->aggregateQuery()->skipLast($count);
+    }
+
+    public function takeLast(int $count): Queryable
+    {
+        return $this->aggregateQuery()->takeLast($count);
+    }
+
+    public function order(): Queryable
+    {
+        return $this->aggregateQuery()->order();
+    }
+
+    public function orderDescending(): Queryable
+    {
+        return $this->aggregateQuery()->orderDescending();
+    }
+
+    public function elementAt(int $index): object
+    {
+        return Enumerable::from($this)->elementAt($index);
+    }
+
+    public function elementAtOrDefault(int $index, mixed $default = null): mixed
+    {
+        return Enumerable::from($this)->elementAtOrDefault($index, $default);
+    }
+
+    public function longCount(ValueExpression|\Closure|null $predicate = null): int
+    {
+        if ($this->loaded !== null) { return $this->aggregateQuery()->longCount($predicate); }
+        return $predicate === null ? $this->count() : $this->where($predicate)->count();
     }
     public function select(ValueExpression|\Closure $selector): Queryable
     {
@@ -164,8 +276,8 @@ final readonly class DbSet implements IQueryable, \Countable
 
     /** Flatten another set into untracked projected rows or scalar values. */
     public function selectMany(
-        IQueryable $inner,
-        ValueExpression $resultSelector,
+        IQueryable|ValueExpression|\Closure $inner,
+        ?ValueExpression $resultSelector = null,
         ?ValueExpression $predicate = null,
     ): Queryable {
         return $this->query->selectMany($inner, $resultSelector, $predicate);
@@ -174,8 +286,8 @@ final readonly class DbSet implements IQueryable, \Countable
     /** Result fields use outer.* and inner.*; keys are relative to each source. */
     public function join(
         IQueryable $inner,
-        ValueExpression $outerKey,
-        ValueExpression $innerKey,
+        ValueExpression|\Closure $outerKey,
+        ValueExpression|\Closure $innerKey,
         ValueExpression $resultSelector,
     ): Queryable
     {
@@ -184,19 +296,28 @@ final readonly class DbSet implements IQueryable, \Countable
 
     public function leftJoin(
         IQueryable $inner,
-        ValueExpression $outerKey,
-        ValueExpression $innerKey,
+        ValueExpression|\Closure $outerKey,
+        ValueExpression|\Closure $innerKey,
         ValueExpression $resultSelector,
     ): Queryable
     {
         return $this->query->leftJoin($inner, $outerKey, $innerKey, $resultSelector);
     }
 
+    public function rightJoin(
+        IQueryable $inner,
+        ValueExpression|\Closure $outerKey,
+        ValueExpression|\Closure $innerKey,
+        ValueExpression $resultSelector,
+    ): Queryable {
+        return $this->query->rightJoin($inner, $outerKey, $innerKey, $resultSelector);
+    }
+
     /** SQL providers may reject this operator; use asEnumerable() for client-side grouping. */
     public function groupJoin(
         IQueryable $inner,
-        ValueExpression $outerKey,
-        ValueExpression $innerKey,
+        ValueExpression|\Closure $outerKey,
+        ValueExpression|\Closure $innerKey,
         ValueExpression $resultSelector,
     ): Queryable {
         return $this->query->groupJoin($inner, $outerKey, $innerKey, $resultSelector);
@@ -212,22 +333,22 @@ final readonly class DbSet implements IQueryable, \Countable
         return $this->query->chunk($size);
     }
 
-    public function sum(ValueExpression $selector): int|float|string
+    public function sum(ValueExpression|\Closure $selector): int|float|string
     {
         return $this->aggregateQuery()->sum($selector);
     }
 
-    public function average(ValueExpression $selector): int|float|string|null
+    public function average(ValueExpression|\Closure $selector): int|float|string|null
     {
         return $this->aggregateQuery()->average($selector);
     }
 
-    public function min(ValueExpression $selector): mixed
+    public function min(ValueExpression|\Closure $selector): mixed
     {
         return $this->aggregateQuery()->min($selector);
     }
 
-    public function max(ValueExpression $selector): mixed
+    public function max(ValueExpression|\Closure $selector): mixed
     {
         return $this->aggregateQuery()->max($selector);
     }
@@ -263,12 +384,12 @@ final readonly class DbSet implements IQueryable, \Countable
         return Enumerable::from($this);
     }
 
-    public function orderBy(ValueExpression $keySelector): self
+    public function orderBy(ValueExpression|\Closure $keySelector): self
     {
         return $this->with($this->query->orderBy($keySelector));
     }
 
-    public function orderByDescending(ValueExpression $keySelector): self
+    public function orderByDescending(ValueExpression|\Closure $keySelector): self
     {
         return $this->with($this->query->orderByDescending($keySelector));
     }
@@ -285,45 +406,46 @@ final readonly class DbSet implements IQueryable, \Countable
         $value = new \Light\Entity\Sql\RawSqlValueExpression($sql, $parameters);
         return $descending ? $this->thenByDescending($value) : $this->thenBy($value);
     }
-    public function thenBy(ValueExpression $keySelector): self
+    public function thenBy(ValueExpression|\Closure $keySelector): self
     {
         return $this->with($this->query->thenBy($keySelector));
     }
-    public function thenByDescending(ValueExpression $keySelector): self
+    public function thenByDescending(ValueExpression|\Closure $keySelector): self
     {
         return $this->with($this->query->thenByDescending($keySelector));
     }
     /** @return T|null */
-    public function firstOrDefault(?ValueExpression $predicate = null, mixed $default = null): mixed
+    public function firstOrDefault(ValueExpression|\Closure|null $predicate = null, mixed $default = null): mixed
     {
         return $this->entityTerminal('firstOrDefault', $predicate, $default);
     }
     /** @return T */
-    public function single(?ValueExpression $predicate = null): object
+    public function single(ValueExpression|\Closure|null $predicate = null): object
     {
         return $this->entityTerminal('single', $predicate);
     }
     /** @return T|null */
-    public function singleOrDefault(?ValueExpression $predicate = null, mixed $default = null): mixed
+    public function singleOrDefault(ValueExpression|\Closure|null $predicate = null, mixed $default = null): mixed
     {
         return $this->entityTerminal('singleOrDefault', $predicate, $default);
     }
 
     /** @return T */
-    public function last(?ValueExpression $predicate = null): object
+    public function last(ValueExpression|\Closure|null $predicate = null): object
     {
         return $this->entityTerminal('last', $predicate);
     }
 
     /** @return T|null */
-    public function lastOrDefault(?ValueExpression $predicate = null, mixed $default = null): mixed
+    public function lastOrDefault(ValueExpression|\Closure|null $predicate = null, mixed $default = null): mixed
     {
         return $this->entityTerminal('lastOrDefault', $predicate, $default);
     }
 
-    public function all(ValueExpression $predicate): bool
+    public function all(ValueExpression|\Closure $predicate): bool
     {
-        return $this->loaded === null ? $this->query->all($this->mapping->convertPredicate($predicate))
+        $predicate = $this->terminalPredicate($predicate);
+        return $this->loaded === null ? $this->query->all($predicate)
             : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded')->all($predicate);
     }
     public function skip(int $count): self { return $this->with($this->query->skip($count)); }
@@ -337,14 +459,15 @@ final readonly class DbSet implements IQueryable, \Countable
     }
 
     /** @return T */
-    public function first(?ValueExpression $predicate = null): object
+    public function first(ValueExpression|\Closure|null $predicate = null): object
     {
+        $predicate = $this->terminalPredicate($predicate, true);
         $tracking = $this->trackingMode();
         if ($this->loaded !== null && $predicate === null) {
             $entity = $this->loaded[0] ?? throw new \UnderflowException('The query has no elements.');
         } else {
             $this->context->validateIncludes($this->mapping, $this->includes);
-            $entity = $this->context->materialize($this->mapping, $this->query->first($predicate === null ? null : $this->mapping->convertPredicate($predicate)), $tracking);
+            $entity = $this->context->materialize($this->mapping, $this->query->first($predicate), $tracking);
         }
         $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));
         return $entity;
@@ -452,13 +575,24 @@ final readonly class DbSet implements IQueryable, \Countable
         return iterator_to_array($this, false);
     }
 
-    private function entityTerminal(string $method, ?ValueExpression $predicate, mixed $default = null): mixed
+    private function terminalPredicate(ValueExpression|\Closure|null $predicate, bool $forceSql = false): ?ValueExpression
     {
+        if ($predicate instanceof \Closure) {
+            return ($forceSql || $this->loaded === null)
+                ? ClosureQueryTranslator::translate($predicate, $this->mapping, $this->query->provider())
+                : \Light\Linq\ClosureTranslator::translate($predicate, $this->query->provider());
+        }
+        return ($forceSql || $this->loaded === null) && $predicate !== null ? $this->mapping->convertPredicate($predicate) : $predicate;
+    }
+
+    private function entityTerminal(string $method, ValueExpression|\Closure|null $predicate, mixed $default = null): mixed
+    {
+        $predicate = $this->terminalPredicate($predicate);
         $tracking = $this->trackingMode();
         $this->context->validateIncludes($this->mapping, $this->includes);
         $query = $this->loaded === null ? $this->query
             : Queryable::from(new \Light\Linq\InMemoryQueryProvider(['loaded' => $this->loaded]), 'loaded');
-        $result = $query->$method($this->loaded === null && $predicate !== null ? $this->mapping->convertPredicate($predicate) : $predicate);
+        $result = $query->$method($predicate);
         if ($result === null) return $default;
         $entity = $this->loaded === null ? $this->context->materialize($this->mapping, $result, $tracking) : $result;
         $this->context->loadIncludes($this->mapping, [$entity], $this->includes, $tracking, QueryFilterRewriter::ignored($this->query->expression()));

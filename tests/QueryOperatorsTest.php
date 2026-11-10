@@ -8,6 +8,49 @@ use Light\Entity\SqlQueryProvider;
 use PHPUnit\Framework\TestCase;
 final class QueryOperatorsTest extends TestCase
 {
+    public function testNonpositiveSkipAllowsFilteringAndOrderingForEveryDialect(): void
+    {
+        foreach ([new SqliteDialect(), new MySqlDialect(), new PostgreSqlDialect(), new SqlServerDialect()] as $dialect) {
+            foreach ([0, -1] as $count) {
+                $query = $this->query()->skip($count)->where(Expr::gt(Expr::field('id'), 1))->orderBy(Expr::field('id'));
+                $compiled = (new SqlQueryCompiler($dialect))->compile($query->expression());
+                self::assertStringContainsString('ORDER BY', $compiled->sql);
+                self::assertStringNotContainsString('OFFSET', $compiled->sql);
+                self::assertSame(['p0' => 1], $compiled->parameters);
+            }
+        }
+    }
+    public function testLinq130OrderingAndPagedReverseForEveryDialect(): void
+    {
+        foreach ([new SqliteDialect(), new MySqlDialect(), new PostgreSqlDialect(), new SqlServerDialect()] as $dialect) {
+            $compiler = new SqlQueryCompiler($dialect);
+            $scalar = $this->query()->select(Expr::field('id'));
+            self::assertStringContainsString($dialect->quoteIdentifier('id').' ASC', $compiler->compile($scalar->order()->expression())->sql);
+            self::assertStringContainsString($dialect->quoteIdentifier('id').' DESC', $compiler->compile($scalar->orderDescending()->expression())->sql);
+            $page = $this->query()->orderBy(Expr::field('id'))->take(2);
+            $compiled = $compiler->compile($page->reverse()->expression());
+            self::assertStringContainsString('FROM (SELECT ', $compiled->sql);
+            self::assertStringContainsString($dialect->quoteIdentifier('id').' ASC', $compiled->sql);
+            self::assertStringContainsString($dialect->quoteIdentifier('id').' DESC', $compiled->sql);
+            $compiled = $compiler->compile($scalar->order()->take(2)->reverse()->expression());
+            self::assertStringContainsString($dialect->quoteIdentifier('__linq_value').' DESC', $compiled->sql);
+        }
+    }
+
+    public function testIdentityOrderingRejectsEntityRows(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('scalar select()');
+        (new SqlQueryCompiler(new SqliteDialect()))->compile($this->query()->order()->expression());
+    }
+
+    public function testReverseRequiresExplicitOrdering(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('explicit orderBy()');
+        (new SqlQueryCompiler(new SqliteDialect()))->compile($this->query()->reverse()->expression());
+    }
+
     private function query(): Queryable { return Queryable::from(new InMemoryQueryProvider([]), 'users'); }
     private function terminal(Queryable $q, string $method, array $args = []): MethodCallExpression
     {

@@ -5,9 +5,19 @@ Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
 This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
+## Dependency compatibility
+
+The current checkout requires stable `mathsgod/light-linq:^1.3` (installed v1.3.0).
+See [LINQ 1.3 implementation](docs/linq-1.3-implementation.md) for operator support and examples.
+DbSet implements the expanded IQueryable interface and accepts closure selectors
+and terminal predicates. New LINQ operators are exposed, but SQL translation is
+still limited to this provider's supported operations; use `asEnumerable()` for
+explicit PHP execution. DbSet `elementAt()`/`elementAtOrDefault()` enumerate the
+existing entity query and preserve its pagination, materialization and tracking.
+
 ## v1.2.0
 
-Requires stable `mathsgod/light-linq:^1.2`. Adds arithmetic, string matching,
+Originally required stable `mathsgod/light-linq:^1.2`. Adds arithmetic, string matching,
 scalar functions, coalesce and conditional query expressions. Also includes
 bound raw ordering and cross-context IN subqueries over a shared connection.
 See [CHANGELOG](CHANGELOG.md) and [Closure translation](docs/closure-translation.md).
@@ -1411,7 +1421,7 @@ $db->set(Customers::class)->where(fn($c) => str_ends_with($c->name, 'z'));
 $db->set(Customers::class)->where(fn($c) => str_contains($c->name, $needle));
 ```
 
-light-entity v1.2.0 requires light-linq `^1.2`, including `StringMatchExpression` support.
+The current checkout requires light-linq `^1.3`, including `StringMatchExpression` support.
 The SQL translator lowers these operations to `LikeExpression`, escaping literal
 `%`, `_`, `!`, and `[` before adding wildcards. Search strings are parameterized;
 field-valued needles are escaped in SQL using `REPLACE`. Nulls follow SQL's
@@ -1420,8 +1430,8 @@ and may differ from PHP's case-sensitive in-memory matching.
 
 ### Closure queries: Contains and Any
 
-Requires `mathsgod/light-linq` v1.2.0 or later within the 1.x
-series (`^1.2`). Install dependencies with `composer install`; a sibling LINQ
+Requires `mathsgod/light-linq` v1.3.0 or later within the 1.x
+series (`^1.3`). Install dependencies with `composer install`; a sibling LINQ
 checkout or local path repository is not required. This version supplies the
 `Light\Linq\Expressions` namespace and closure translator.
 
