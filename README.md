@@ -5,6 +5,16 @@ Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
 This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
+## Complex properties
+
+Map a required value object into its owner's table with
+`$builder->entity(Customer::class)->complexProperty('address')`. The object type
+is inferred from a declared property, with `address_city`, `address_street`, etc.
+as default column names. Reads assemble the object; tracking detects member
+changes; queries translate paths such as `$customer->address->city` to columns.
+See [Complex properties](docs/complex-properties.md) for configuration, custom
+column names, schema requirements and the initial supported scope.
+
 ## Entity inheritance
 
 Inherited `Entity` classes now use table-per-hierarchy (TPH) by default: `Cat`

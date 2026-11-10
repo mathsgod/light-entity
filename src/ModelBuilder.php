@@ -12,12 +12,33 @@ final class ModelBuilder
     private array $filters = [];
     private bool $sealed = false;
     private array $discriminators = [];
+    private array $complexProperties = [];
 
     public function entity(string $class): EntityTypeBuilder
     {
         if (!class_exists($class)) { throw new \InvalidArgumentException('Entity class does not exist: '.$class); }
         return new EntityTypeBuilder($this, $class);
     }
+
+    /** @internal */
+    public function setComplexProperty(string $owner, string $name, ?string $class, array $columns): void
+    {
+        if ($this->sealed) throw new \LogicException('The model has already been configured.');
+        if ($class === null) {
+            $reflection = new \ReflectionClass($owner);
+            $type = $reflection->hasProperty($name) ? $reflection->getProperty($name)->getType() : null;
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                throw new \InvalidArgumentException('Specify the complex type or declare a typed object property.');
+            }
+            $class = $type->getName();
+        }
+        $mapping = new ComplexPropertyMapping($name, $class, $columns);
+        $mapping->validateOwner(new \ReflectionClass($owner));
+        $this->complexProperties[$owner][$name] = $mapping;
+    }
+
+    /** @internal */
+    public function complexProperties(): array { return $this->complexProperties; }
 
     /** @internal */
     public function setDiscriminator(string $root, string $column): DiscriminatorBuilder

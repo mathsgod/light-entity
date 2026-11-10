@@ -13,6 +13,7 @@ final class Model implements IModel
     private array $hierarchies = [];
     private array $hierarchyColumns = [];
     private array $discriminators = [];
+    private array $complexProperties = [];
 
     /** @param iterable<EntityMapping> $mappings */
     public function __construct(private readonly SchemaReader $schema, iterable $mappings = [], private readonly ?\Closure $initialize = null)
@@ -53,7 +54,7 @@ final class Model implements IModel
         if (!$tph) {
             $attribute = $reflection->getAttributes(Table::class)[0] ?? null;
             $table ??= $attribute?->newInstance()->name ?? self::tableName($reflection);
-            return $this->mappings[$class] = EntityMapping::fromSchema($class, $table, $this->schema->columns($table));
+            return $this->mappings[$class] = EntityMapping::fromSchema($class, $table, $this->schema->columns($table), complexProperties: $this->complexPropertiesFor($class));
         }
         $attribute = $root->getAttributes(Table::class)[0] ?? null;
         $table ??= $this->hierarchies[$rootClass]->table ?? $attribute?->newInstance()->name ?? self::tableName($root);
@@ -83,7 +84,7 @@ final class Model implements IModel
         foreach (array_unique([$rootClass, ...$knownTypes, ...array_keys($config['values'] ?? []), $class]) as $type) {
             $hierarchy->register($type, $config['values'][$type] ?? null);
         }
-        $mapping = EntityMapping::fromSchema($class, $table, $columns, hierarchy: $hierarchy);
+        $mapping = EntityMapping::fromSchema($class, $table, $columns, hierarchy: $hierarchy, complexProperties: $this->complexPropertiesFor($class));
         $this->hierarchyColumns[$rootClass] = $columns;
         $this->hierarchies[$rootClass] = $hierarchy;
         return $this->mappings[$class] = $mapping;
@@ -102,6 +103,32 @@ final class Model implements IModel
             if ($parent !== Entity::class) throw new \LogicException('Configure hasDiscriminator() on the hierarchy root.');
         }
         $this->discriminators = $discriminators;
+    }
+
+    /** @internal */
+    public function configureComplexProperties(array $properties): void
+    {
+        foreach ($properties as $class => $mappings) {
+            foreach ($this->mappings as $mapping) {
+                if (is_a($mapping->class, $class, true)) throw new \LogicException('Configure complex properties on explicit EntityMapping objects directly.');
+            }
+        }
+        $this->complexProperties = $properties;
+        foreach (array_keys($properties) as $class) $this->complexPropertiesFor($class);
+    }
+
+    private function complexPropertiesFor(string $class): array
+    {
+        $properties = [];
+        foreach (array_reverse([$class, ...array_values(class_parents($class))]) as $type) {
+            foreach ($this->complexProperties[$type] ?? [] as $name => $mapping) {
+                if (isset($properties[$name]) && ($properties[$name]->class !== $mapping->class || $properties[$name]->columns !== $mapping->columns)) {
+                    throw new \LogicException('Inherited complex properties cannot be remapped on a derived entity.');
+                }
+                $properties[$name] = $mapping;
+            }
+        }
+        return $properties;
     }
 
     public function getEntityTypes(): array

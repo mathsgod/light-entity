@@ -47,6 +47,27 @@ final class QueryFilterRewriter
             return new \Light\Linq\Expressions\AggregateExpression($expression->function,
                 $expression->operand === null ? null : self::rewrite($expression->operand, $source));
         }
+        if ($expression instanceof \Light\Linq\Expressions\ScalarFunctionExpression) {
+            return new \Light\Linq\Expressions\ScalarFunctionExpression($expression->function,
+                array_map(fn ($value) => self::rewrite($value, $source), $expression->arguments));
+        }
+        if ($expression instanceof \Light\Linq\Expressions\CoalesceExpression) {
+            return new \Light\Linq\Expressions\CoalesceExpression(self::rewrite($expression->left, $source), self::rewrite($expression->right, $source));
+        }
+        if ($expression instanceof \Light\Linq\Expressions\ConditionalExpression) {
+            return new \Light\Linq\Expressions\ConditionalExpression(self::rewrite($expression->test, $source),
+                self::rewrite($expression->ifTrue, $source), self::rewrite($expression->ifFalse, $source));
+        }
+        if ($expression instanceof \Light\Linq\Expressions\StringMatchExpression) {
+            return new \Light\Linq\Expressions\StringMatchExpression(self::rewrite($expression->subject, $source),
+                $expression->operation, self::rewrite($expression->needle, $source));
+        }
+        if ($expression instanceof \Light\Entity\Sql\LikeExpression) {
+            return new \Light\Entity\Sql\LikeExpression(self::rewrite($expression->match, $source), self::rewrite($expression->pattern, $source), $expression->escape);
+        }
+        if ($expression instanceof \Light\Entity\Sql\StringPatternExpression) {
+            return new \Light\Entity\Sql\StringPatternExpression(self::rewrite($expression->needle, $source), $expression->operation);
+        }
         if (!$expression instanceof MethodCallExpression) { return $expression; }
         $rewrittenSource = self::rewrite($expression->source, $source);
         $arguments = $expression->arguments;

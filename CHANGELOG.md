@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Complex properties
+
+- Add opt-in `complexProperty()` configuration for required single-level value
+  objects flattened into the owner's table, with inferred/explicit types and
+  custom leaf column names.
+- Assemble complex objects during hydration, flatten them for writes and scalar
+  snapshots, detect in-place member changes, and preserve defaults/computed values.
+- Bind member paths in filters, ordering, projection, aggregates, join keys,
+  correlated subqueries and bulk assignments with source-specific metadata.
+- Support no-tracking, Include and inherited TPH complex metadata, with explicit
+  rejection of conflicting columns, nullable/nested/readonly object shapes and
+  whole-object SQL projections/comparisons.
+- Add SQLite, dialect compilation and MySQL integration coverage and document
+  the initial feature scope in `docs/complex-properties.md`.
+
 ### Breaking inheritance convention
 
 - Infer table-per-hierarchy mappings for inherited Entity classes, using the

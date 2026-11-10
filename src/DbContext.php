@@ -62,6 +62,7 @@ class DbContext
             $this->onModelCreating($builder);
             $builder->seal();
             $this->model->configureInheritance($builder->discriminators());
+            $this->model->configureComplexProperties($builder->complexProperties());
             $this->modelBuilder = $builder;
         } finally { $this->buildingModel = false; }
     }
@@ -90,6 +91,7 @@ class DbContext
     private function prepareQuery(\Light\Linq\Expressions\Expression $expression): \Light\Linq\Expressions\Expression
     {
         $this->ensureModelCreated();
+        $expression = ComplexQueryRewriter::rewrite($expression);
         return QueryFilterRewriter::rewrite($expression, fn (\Light\Entity\Sql\EntityQuerySourceExpression $source) =>
             ($source->filterResolver ?? $this->resolveQueryFilters(...))($source));
     }
@@ -115,7 +117,7 @@ class DbContext
             if (is_array($predicate)) { $predicate = WhereFilter::parse($source->mapping->convertFilter($predicate)); }
             elseif ($predicate instanceof \Light\Linq\Expressions\ValueExpression) { $predicate = $source->mapping->convertPredicate($predicate); }
             else { throw new \LogicException('A query filter must return a condition map or ValueExpression.'); }
-            $query = $query->where($predicate);
+            $query = $query->where(ComplexQueryRewriter::value($predicate, $mapping->complexPaths()));
         }
         return $query->expression();
     }
@@ -280,6 +282,16 @@ class DbContext
     {
         if ($query->provider() !== $this->provider) {
             throw new \LogicException('Bulk writes require the context query provider.');
+        }
+        if ($values !== null) {
+            $bound = [];
+            foreach ($values as $name => $value) {
+                $column = $mapping->columnFor((string) $name);
+                if (array_key_exists($column, $bound)) throw new \InvalidArgumentException('Duplicate update column: '.$column);
+                $bound[$column] = $value instanceof \Light\Linq\Expressions\ValueExpression
+                    ? ComplexQueryRewriter::value($value, $mapping->complexPaths()) : $value;
+            }
+            $values = $bound;
         }
         foreach ($values ?? [] as $name => $value) {
             if (!in_array($name, $mapping->properties, true)) {

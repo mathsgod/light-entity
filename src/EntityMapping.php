@@ -10,6 +10,8 @@ final readonly class EntityMapping
     private \ReflectionClass $reflection;
     private bool $directValuesCompatible;
     private array $propertyKeys;
+    private array $complexColumns;
+    private array $complexPaths;
     /** @internal Eligibility for native bulk hydration (legacy property name). */
     public bool $pdoFetchClassCompatible;
     /** @var list<string> @internal */
@@ -25,6 +27,7 @@ final readonly class EntityMapping
      * @param string|non-empty-list<string> $key
      * @param array<string, ValueConverter> $converters
      * @param array<string, ValueComparer> $comparers
+     * @param array<string, ComplexPropertyMapping> $complexProperties
      */
     public function __construct(
         public string $class,
@@ -36,6 +39,7 @@ final readonly class EntityMapping
         public array $converters = [],
         public array $comparers = [],
         public ?EntityHierarchy $hierarchy = null,
+        public array $complexProperties = [],
     ) {
         $this->keys = is_array($key) ? array_values($key) : [$key];
         if ($this->keys === []
@@ -64,13 +68,31 @@ final readonly class EntityMapping
         }
         $reflection = $this->reflection = new \ReflectionClass($class);
         $this->propertyKeys = array_fill_keys($properties, true);
-        $this->directValuesCompatible = $reflection->isSubclassOf(Entity::class)
+        $complexColumns = $complexPaths = [];
+        foreach ($complexProperties as $name => $complex) {
+            if (!$complex instanceof ComplexPropertyMapping || $name !== $complex->name || in_array($name, $properties, true)) {
+                throw new \InvalidArgumentException('Invalid or conflicting complex property mapping.');
+            }
+            $complex->validateOwner($reflection);
+            $complexPaths[$name] = null;
+            foreach ($complex->columns as $member => $column) {
+                if (!in_array($column, $properties, true) || isset($complexColumns[$column])
+                    || in_array($column, $this->keys, true) || $column === $hierarchy?->column || $reflection->hasProperty($column)) {
+                    throw new \InvalidArgumentException('Missing, conflicting or protected complex member column: '.$column);
+                }
+                $complexColumns[$column] = [$complex, $member];
+                $complexPaths[$name.'.'.$member] = $column;
+            }
+        }
+        $this->complexColumns = $complexColumns;
+        $this->complexPaths = $complexPaths;
+        $this->directValuesCompatible = $complexProperties === [] && $reflection->isSubclassOf(Entity::class)
             && $reflection->getMethod('__get')->getDeclaringClass()->getName() === Entity::class
             && $reflection->getMethod('__set')->getDeclaringClass()->getName() === Entity::class
             && $reflection->getMethod('__isset')->getDeclaringClass()->getName() === Entity::class
             && array_filter($properties, fn ($name) => $reflection->hasProperty($name)
                 && $reflection->getProperty($name)->isPublic()) === [];
-        $this->pdoFetchClassCompatible = $reflection->isSubclassOf(Entity::class)
+        $this->pdoFetchClassCompatible = $complexProperties === [] && $reflection->isSubclassOf(Entity::class)
             && $reflection->getMethod('__set')->getDeclaringClass()->getName() === Entity::class
             && array_filter($properties, fn ($name) => $reflection->hasProperty($name)) === []
             && array_filter($properties, fn ($name) => !isset($columns[$name])
@@ -81,6 +103,7 @@ final readonly class EntityMapping
             throw new \InvalidArgumentException('Entity must be instantiable.');
         }
         foreach ($properties as $name) {
+            if (isset($complexColumns[$name])) continue;
             if (!$reflection->hasProperty($name) && $reflection->isSubclassOf(Entity::class)) {
                 continue;
             }
@@ -92,7 +115,7 @@ final readonly class EntityMapping
     }
 
     /** @param list<\Light\Entity\Schema\Column> $columns */
-    public static function fromSchema(string $class, string $table, array $columns, array $converters = [], array $comparers = [], ?EntityHierarchy $hierarchy = null): self
+    public static function fromSchema(string $class, string $table, array $columns, array $converters = [], array $comparers = [], ?EntityHierarchy $hierarchy = null, array $complexProperties = []): self
     {
         $keys = array_values(array_filter($columns, fn ($c) => $c->primary));
         if ($keys === []) {
@@ -103,8 +126,17 @@ final readonly class EntityMapping
             count($keys) === 1 ? $keys[0]->name : array_column($keys, 'name'),
             array_filter($keys, fn ($c) => $c->generated) !== [],
             array_column($columns, null, 'name'),
-            $converters, $comparers, $hierarchy,
+            $converters, $comparers, $hierarchy, $complexProperties,
         );
+    }
+
+    /** @internal Logical complex member paths mapped to physical columns; null marks an object. */
+    public function complexPaths(): array { return $this->complexPaths; }
+
+    /** Resolve a member path for filters and bulk update assignments. */
+    public function columnFor(string $path): string
+    {
+        return ComplexQueryRewriter::column($path, $this->complexPaths);
     }
 
     /** Extract a complete key in mapping order. */
@@ -139,6 +171,10 @@ final readonly class EntityMapping
     public function values(object $entity): array
     {
         if (!$entity instanceof $this->class) { throw new \InvalidArgumentException('Entity does not match mapping.'); }
+        if ($this->complexColumns !== [] && $entity instanceof Entity
+            && array_intersect_key($entity->storedValues(), $this->complexColumns) !== []) {
+            throw new \InvalidArgumentException('Assign complex object members instead of physical leaf columns on the entity.');
+        }
         if ($this->directValuesCompatible && $entity instanceof Entity) {
             $values = $entity->storedValues();
             if (array_keys($values) !== $this->properties) {
@@ -146,7 +182,8 @@ final readonly class EntityMapping
             }
         } else {
             $values = [];
-            foreach ($this->properties as $property) { $values[$property] = $entity->$property ?? null; }
+            foreach ($this->properties as $property) { $values[$property] = isset($this->complexColumns[$property]) ? null : ($entity->$property ?? null); }
+            foreach ($this->complexProperties as $complex) $values = array_replace($values, $complex->values($entity));
         }
         if ($this->hierarchy !== null) {
             $column = $this->hierarchy->column;
@@ -174,7 +211,12 @@ final readonly class EntityMapping
     {
         if (!$entity instanceof $this->class) { throw new \InvalidArgumentException('Entity does not match mapping.'); }
         if (array_diff_key($values, $this->propertyKeys) !== []) { throw new \InvalidArgumentException('Values contain unknown mapped properties.'); }
-        foreach ($values as $property => $value) { $entity->$property = $value; }
+        foreach ($values as $property => $value) {
+            if (!isset($this->complexColumns[$property])) $entity->$property = $value;
+        }
+        foreach ($this->complexProperties as $complex) {
+            if (array_intersect(array_values($complex->columns), array_keys($values)) !== []) $complex->apply($entity, $values);
+        }
     }
 
     /** Build a model-value snapshot without duplicating storage for ordinary dynamic entities. */
@@ -206,6 +248,7 @@ final readonly class EntityMapping
 
     public function toProviderValue(string $property, mixed $value): mixed
     {
+        $property = $this->columnFor($property);
         $value = isset($this->converters[$property]) ? $this->converters[$property]->convertToProvider($value) : $value;
         if ($value !== null && !is_scalar($value)) {
             throw new \InvalidArgumentException('Database values must be scalar or null.');
@@ -224,11 +267,11 @@ final readonly class EntityMapping
             $left = $predicate->left;
             $right = $predicate->right;
             if ($left instanceof \Light\Linq\Expressions\FieldExpression && $right instanceof \Light\Linq\Expressions\ConstantExpression
-                && isset($this->converters[$left->path])) {
-                $right = new \Light\Linq\Expressions\ConstantExpression($this->toProviderValue($left->path, $right->value));
+                && isset($this->converters[$this->columnFor($left->path)])) {
+                $right = new \Light\Linq\Expressions\ConstantExpression($this->toProviderValue($this->columnFor($left->path), $right->value));
             } elseif ($right instanceof \Light\Linq\Expressions\FieldExpression && $left instanceof \Light\Linq\Expressions\ConstantExpression
-                && isset($this->converters[$right->path])) {
-                $left = new \Light\Linq\Expressions\ConstantExpression($this->toProviderValue($right->path, $left->value));
+                && isset($this->converters[$this->columnFor($right->path)])) {
+                $left = new \Light\Linq\Expressions\ConstantExpression($this->toProviderValue($this->columnFor($right->path), $left->value));
             }
             return new \Light\Linq\Expressions\BinaryExpression($left, $predicate->operator, $right);
         }
@@ -250,7 +293,7 @@ final readonly class EntityMapping
                 $filter[$name] = array_map(fn ($child) => is_array($child) ? $this->convertFilter($child) : $child, $condition);
             } elseif ($name === '_not' && is_array($condition)) {
                 $filter[$name] = $this->convertFilter($condition);
-            } elseif (isset($this->converters[$name])) {
+            } elseif (isset($this->converters[$this->columnFor($name)])) {
                 if (!is_array($condition)) {
                     $filter[$name] = $this->toProviderValue($name, $condition);
                 } else {
@@ -297,9 +340,11 @@ final readonly class EntityMapping
         foreach ($this->properties as $name) {
             $column = $this->columns[$name] ?? null;
             $reflection = new \ReflectionClass($entity);
-            $initialized = $reflection->hasProperty($name)
-                ? $reflection->getProperty($name)->isInitialized($entity)
-                : ($entity instanceof Entity && $entity->hasValue($name));
+            $initialized = isset($this->complexColumns[$name])
+                ? $this->complexColumns[$name][0]->initialized($entity, $this->complexColumns[$name][1])
+                : ($reflection->hasProperty($name)
+                    ? $reflection->getProperty($name)->isInitialized($entity)
+                    : ($entity instanceof Entity && $entity->hasValue($name)));
             if ($name === $this->hierarchy?->column) continue;
             if ($name === $this->generatedKeyProperty || $column?->computed || !$initialized) {
                 unset($values[$name]);
@@ -331,12 +376,14 @@ final readonly class EntityMapping
         $type = $this->concreteClass($row);
         $reflection = $type === $this->class ? $this->reflection : new \ReflectionClass($type);
         $entity = $reflection->newInstanceWithoutConstructor();
+        $values = [];
         foreach ($this->properties as $property) {
             // A configured converter receives the raw provider value, before schema coercion.
-            $entity->$property = isset($this->converters[$property])
+            $values[$property] = isset($this->converters[$property])
                 ? $this->converters[$property]->convertFromProvider($row[$property])
                 : (isset($this->columns[$property]) ? $this->columns[$property]->convert($row[$property]) : $row[$property]);
         }
+        $this->applyValues($entity, $values);
         return $entity;
     }
 }

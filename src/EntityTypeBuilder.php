@@ -22,4 +22,10 @@ final readonly class EntityTypeBuilder
     {
         return $this->model->setDiscriminator($this->class, $column);
     }
+    /** Flatten a required value object into this entity's table. Types may be inferred from a declared property. */
+    public function complexProperty(string $name, ?string $class = null, array $columns = []): self
+    {
+        $this->model->setComplexProperty($this->class, $name, $class, $columns);
+        return $this;
+    }
 }

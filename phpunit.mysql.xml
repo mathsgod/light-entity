@@ -25,6 +25,7 @@
             <file>tests/integration/MySqlMigrationTest.php</file>
             <file>tests/integration/MySqlCompositeKeyTest.php</file>
             <file>tests/integration/MySqlInheritanceTest.php</file>
+            <file>tests/integration/MySqlComplexPropertyTest.php</file>
         </testsuite>
     </testsuites>
 </phpunit>
