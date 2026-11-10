@@ -138,6 +138,10 @@ final class SaveChangesExecutor
     {
         $keys = $mapping->keyValues($values);
         $conditions = array_map(fn ($key) => $this->quote($key).' = ?', array_keys($keys));
+        if ($mapping->hierarchy !== null) {
+            $conditions[] = $this->quote($mapping->hierarchy->column).' = ?';
+            $keys[$mapping->hierarchy->column] = $mapping->hierarchy->value($mapping->class);
+        }
         return [implode(' AND ', $conditions), array_values($keys)];
     }
 

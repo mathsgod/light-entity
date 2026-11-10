@@ -35,6 +35,7 @@ final readonly class EntityMapping
         public array $columns = [],
         public array $converters = [],
         public array $comparers = [],
+        public ?EntityHierarchy $hierarchy = null,
     ) {
         $this->keys = is_array($key) ? array_values($key) : [$key];
         if ($this->keys === []
@@ -76,7 +77,7 @@ final readonly class EntityMapping
                 || preg_match('/^(bit|year)\b/i', $columns[$name]->type)) === [];
         $this->booleanProperties = array_values(array_filter($properties, fn ($name) => isset($columns[$name])
             && ($columns[$name]->boolean || preg_match('/\b(bool|boolean)\b/i', $columns[$name]->type))));
-        if (!$reflection->isInstantiable()) {
+        if (!$reflection->isInstantiable() && !($reflection->isAbstract() && $hierarchy !== null)) {
             throw new \InvalidArgumentException('Entity must be instantiable.');
         }
         foreach ($properties as $name) {
@@ -91,7 +92,7 @@ final readonly class EntityMapping
     }
 
     /** @param list<\Light\Entity\Schema\Column> $columns */
-    public static function fromSchema(string $class, string $table, array $columns, array $converters = [], array $comparers = []): self
+    public static function fromSchema(string $class, string $table, array $columns, array $converters = [], array $comparers = [], ?EntityHierarchy $hierarchy = null): self
     {
         $keys = array_values(array_filter($columns, fn ($c) => $c->primary));
         if ($keys === []) {
@@ -102,7 +103,7 @@ final readonly class EntityMapping
             count($keys) === 1 ? $keys[0]->name : array_column($keys, 'name'),
             array_filter($keys, fn ($c) => $c->generated) !== [],
             array_column($columns, null, 'name'),
-            $converters, $comparers,
+            $converters, $comparers, $hierarchy,
         );
     }
 
@@ -146,6 +147,14 @@ final readonly class EntityMapping
         } else {
             $values = [];
             foreach ($this->properties as $property) { $values[$property] = $entity->$property ?? null; }
+        }
+        if ($this->hierarchy !== null) {
+            $column = $this->hierarchy->column;
+            $value = $this->hierarchy->value($entity::class);
+            if (($values[$column] ?? null) !== null && $values[$column] !== $value) {
+                throw new \LogicException('The TPH discriminator cannot be changed.');
+            }
+            $values[$column] = $value;
         }
         $this->validateModelValues($values);
         return $values;
@@ -291,6 +300,7 @@ final readonly class EntityMapping
             $initialized = $reflection->hasProperty($name)
                 ? $reflection->getProperty($name)->isInitialized($entity)
                 : ($entity instanceof Entity && $entity->hasValue($name));
+            if ($name === $this->hierarchy?->column) continue;
             if ($name === $this->generatedKeyProperty || $column?->computed || !$initialized) {
                 unset($values[$name]);
             }
@@ -301,6 +311,7 @@ final readonly class EntityMapping
     /** Entity queries require every mapped column, even when identity tracking reuses an object. */
     public function validateRow(array $row): void
     {
+        $this->concreteClass($row);
         foreach ($this->properties as $property) {
             if (!array_key_exists($property, $row)) {
                 throw new \LogicException("Query result is missing mapped column: {$property}");
@@ -308,10 +319,18 @@ final readonly class EntityMapping
         }
     }
 
+    /** Resolve the concrete entity type before tracking or materializing. @internal */
+    public function concreteClass(array $row): string
+    {
+        return $this->hierarchy?->classFor($row, $this->class) ?? $this->class;
+    }
+
     public function hydrate(array $row): object
     {
         $this->validateRow($row);
-        $entity = $this->reflection->newInstanceWithoutConstructor();
+        $type = $this->concreteClass($row);
+        $reflection = $type === $this->class ? $this->reflection : new \ReflectionClass($type);
+        $entity = $reflection->newInstanceWithoutConstructor();
         foreach ($this->properties as $property) {
             // A configured converter receives the raw provider value, before schema coercion.
             $entity->$property = isset($this->converters[$property])

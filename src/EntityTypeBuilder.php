@@ -17,4 +17,9 @@ final readonly class EntityTypeBuilder
         $this->model->setQueryFilter($this->class, $name, $filter);
         return $this;
     }
+    /** Use TPH with a custom string discriminator column. Configure the hierarchy root. */
+    public function hasDiscriminator(string $column = 'Discriminator'): DiscriminatorBuilder
+    {
+        return $this->model->setDiscriminator($this->class, $column);
+    }
 }

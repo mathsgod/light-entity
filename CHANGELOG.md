@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Breaking inheritance convention
+
+- Infer table-per-hierarchy mappings for inherited Entity classes, using the
+  root table and a string `Discriminator` column by default. This convention
+  change requires a major release; existing independent table mappings require
+  migration or explicit EntityMapping objects.
+- Materialize runtime subtypes for root queries and share tracking identity
+  across the hierarchy. Preserve concrete types during no-tracking and includes.
+- Apply structural type predicates to derived queries, joins, subqueries, raw
+  SQL, includes and bulk writes, even when query filters are ignored.
+- Populate discriminator values on insert; reject discriminator changes and
+  unknown types. Inherit root query filters and relationship configuration.
+- Add `hasDiscriminator()` / `hasValue()` configuration for custom string
+  discriminator columns and values, including abstract roots.
+- Document schema requirements, type discovery and migration in
+  `docs/inheritance.md`.
+
+### LINQ compatibility
+
 - Require `mathsgod/light-linq:^1.3` and adapt DbSet to its expanded IQueryable
   contract, including closure-compatible selectors and predicates.
 - Forward new LINQ query operators without silently evaluating unsupported SQL

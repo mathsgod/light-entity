@@ -5,6 +5,14 @@ Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
 This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
+## Entity inheritance
+
+Inherited `Entity` classes now use table-per-hierarchy (TPH) by default: `Cat`
+and `Dog` share the root `Animal` table, with a string `Discriminator` column.
+Derived queries filter by type; base queries materialize the corresponding PHP
+subclasses. See [Inheritance](docs/inheritance.md) for schema, configuration and
+migration requirements. This is an unreleased breaking convention change.
+
 ## Dependency compatibility
 
 The current checkout requires stable `mathsgod/light-linq:^1.3` (installed v1.3.0).

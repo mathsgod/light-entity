@@ -73,7 +73,7 @@ final class IncludeLoader
             foreach (array_chunk(array_values($keys), $batchSize) as $batch) {
                 foreach ($this->fetch($relation, $batch, $ignoredFilters) as [$row, $match]) {
                     $target = $this->context->materialize($relation['mapping'], $row, $tracking);
-                    if ($target instanceof Entity) { $target->attachRelations($this->context, $relation['mapping'], $tracking, $ignoredFilters); }
+                    if ($target instanceof Entity) { $target->attachRelations($this->context, $this->context->entityMapping($relation['mapping'], $target), $tracking, $ignoredFilters); }
                     $key = $match ?? $this->key($target, $relation['remote']);
                     if ($key !== null) { $groups[$key][] = $target; }
                 }

@@ -142,12 +142,14 @@ final class ChangeTracker
     }
 
     /** @internal */
-    public function tracked(EntityMapping $mapping, int|string|array $key): ?object
+    public function tracked(EntityMapping $mapping, int|string|array $key, bool $anyType = false): ?object
     {
         $key = $mapping->normalizeKey($key);
         foreach ($this->records as $entity) {
             $record = $this->records[$entity];
-            if ($record['mapping'] !== $mapping) { continue; }
+            $sameHierarchy = $mapping->hierarchy !== null && $record['mapping']->hierarchy === $mapping->hierarchy;
+            if ($record['mapping'] !== $mapping && !$sameHierarchy) { continue; }
+            if (!$anyType && !$entity instanceof $mapping->class) { continue; }
             foreach ($key as $name => $value) {
                 if ($record['original'][$name] === null || (string) $record['original'][$name] !== (string) $value) {
                     continue 2;
@@ -172,7 +174,7 @@ final class ChangeTracker
             if ($computed && !$mapping->propertyEquals($name, $value, $original[$name])) {
                 throw new \LogicException('Computed columns cannot be modified.');
             }
-            if (!$computed && !in_array($name, $mapping->keys, true) && ($forced || !$mapping->propertyEquals($name, $value, $original[$name]))) {
+            if ($name !== $mapping->hierarchy?->column && !$computed && !in_array($name, $mapping->keys, true) && ($forced || !$mapping->propertyEquals($name, $value, $original[$name]))) {
                 $changes[$name] = $value;
             }
         }
@@ -182,6 +184,12 @@ final class ChangeTracker
     /** @internal Validate keys before executing any write. */
     public function validateKey(EntityMapping $mapping, array $values, array $original): void
     {
+        if ($mapping->hierarchy !== null) {
+            $column = $mapping->hierarchy->column;
+            if (($values[$column] ?? null) !== ($original[$column] ?? null)) {
+                throw new \LogicException('The TPH discriminator cannot be changed.');
+            }
+        }
         foreach ($mapping->keys as $key) {
             if ($values[$key] !== $original[$key]) {
                 throw new \LogicException('Changing a tracked primary key is not supported.');
@@ -216,7 +224,7 @@ final class ChangeTracker
     private function assertIdentityAvailable(EntityMapping $mapping, array $values, object $entity): void
     {
         foreach ($mapping->keys as $key) { if ($values[$key] === null) { return; } }
-        if (($tracked = $this->tracked($mapping, $mapping->keyValues($values))) !== null && $tracked !== $entity) {
+        if (($tracked = $this->tracked($mapping, $mapping->keyValues($values), true)) !== null && $tracked !== $entity) {
             throw new \LogicException('Another entity with this key is already tracked.');
         }
     }

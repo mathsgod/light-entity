@@ -33,7 +33,7 @@ class DbContext
         $this->database = new DatabaseFacade($pdo);
         $this->functions = new SqlFunctionRegistry();
         $this->changeTracker = new ChangeTracker($this);
-        $this->model = new Model(new \Light\Entity\Schema\SchemaReader($pdo), $mappings);
+        $this->model = new Model(new \Light\Entity\Schema\SchemaReader($pdo), $mappings, $this->ensureModelCreated(...));
         $this->provider = new SqlQueryProvider($pdo, $dialect, fn ($expression) => $this->prepareQuery($expression));
         $this->relationships = new RelationshipResolver(new \Light\Entity\Schema\SchemaReader($pdo), $this->model);
         $this->includeLoader = new IncludeLoader($this, $pdo, $dialect, $this->relationships);
@@ -61,6 +61,7 @@ class DbContext
             $builder = new ModelBuilder();
             $this->onModelCreating($builder);
             $builder->seal();
+            $this->model->configureInheritance($builder->discriminators());
             $this->modelBuilder = $builder;
         } finally { $this->buildingModel = false; }
     }
@@ -69,7 +70,7 @@ class DbContext
     public function hasQueryFilters(EntityMapping $mapping): bool
     {
         $this->ensureModelCreated();
-        return $this->modelBuilder->filters($mapping->class) !== [];
+        return $mapping->hierarchy !== null || $this->modelBuilder->filters($mapping->class) !== [];
     }
 
     /** @internal */
@@ -96,7 +97,18 @@ class DbContext
     /** Each source resolves filters in its owning context, including cross-context subqueries. */
     private function resolveQueryFilters(\Light\Entity\Sql\EntityQuerySourceExpression $source): \Light\Linq\Expressions\Expression
     {
+        $mapping = $source->mapping;
         $query = new Queryable($this->provider, $source->source);
+        // Type predicates are structural and cannot be disabled with ignoreQueryFilters().
+        if ($mapping->hierarchy !== null && $mapping->class !== $mapping->hierarchy->root) {
+            $values = $mapping->hierarchy->valuesFor($mapping->class);
+            $predicate = null;
+            foreach ($values as $value) {
+                $part = \Light\Linq\Expr::eq(\Light\Linq\Expr::field($mapping->hierarchy->column), $value);
+                $predicate = $predicate === null ? $part : new \Light\Linq\Expressions\LogicalExpression($predicate, 'or', $part);
+            }
+            $query = $query->where($predicate ?? \Light\Linq\Expr::eq(\Light\Linq\Expr::value(1), 0));
+        }
         foreach ($this->modelBuilder->filters($source->mapping->class) as $name => $filter) {
             if ($source->ignoredFilters === null || in_array($name, $source->ignoredFilters, true)) { continue; }
             $predicate = $filter instanceof \Closure ? $filter($this) : $filter;
@@ -168,7 +180,7 @@ class DbContext
     public function loadIncludes(EntityMapping $mapping, array $entities, array $paths, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll, ?array $ignoredFilters = []): void
     {
         foreach ($entities as $entity) {
-            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, $tracking, $ignoredFilters); }
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $this->entityMapping($mapping, $entity), $tracking, $ignoredFilters); }
         }
         $this->includeLoader->load($mapping, $entities, $paths, $tracking, $ignoredFilters);
     }
@@ -187,6 +199,7 @@ class DbContext
 
     public function entry(object $entity): EntityEntry
     {
+        $this->ensureModelCreated();
         $mapping = $this->changeTracker->mapping($entity) ?? $this->model->getEntityType($entity::class);
         return $this->changeTracker->entry($mapping, $entity);
     }
@@ -194,6 +207,7 @@ class DbContext
     /** Attach an existing entity; optional originals are model values, not raw database values. */
     public function attach(object $entity, ?array $originalValues = null): EntityEntry
     {
+        $this->ensureModelCreated();
         $mapping = $this->changeTracker->mapping($entity) ?? $this->model->getEntityType($entity::class);
         return $this->changeTracker->attach($mapping, $entity, $originalValues);
     }
@@ -213,15 +227,26 @@ class DbContext
 
     public function add(string $class, object $entity): void
     {
-        $this->changeTracker->add($this->model->getEntityType($class), $entity);
+        $this->ensureModelCreated();
+        $mapping = $this->model->getEntityType($class);
+        $this->changeTracker->add($this->entityMapping($mapping, $entity), $entity);
     }
 
     public function remove(string $class, object $entity): void
     {
+        $this->ensureModelCreated();
         $mapping = $class === DynamicEntity::class
             ? ($this->changeTracker->mapping($entity) ?? $this->model->getEntityType($class))
             : $this->model->getEntityType($class);
-        $this->changeTracker->setState($mapping, $entity, EntityState::Deleted);
+        $this->changeTracker->setState($this->entityMapping($mapping, $entity), $entity, EntityState::Deleted);
+    }
+
+    /** @internal Resolve writes and relationships against the concrete entity metadata. */
+    public function entityMapping(EntityMapping $mapping, object $entity): EntityMapping
+    {
+        if (!$entity instanceof $mapping->class) throw new \InvalidArgumentException('Entity does not match mapping.');
+        return $mapping->hierarchy === null || $mapping->class === $entity::class
+            ? $mapping : $this->model->getEntityType($entity::class);
     }
 
     /** @internal */
@@ -233,9 +258,11 @@ class DbContext
     /** @internal */
     public function materialize(EntityMapping $mapping, array $row, QueryTrackingBehavior $tracking = QueryTrackingBehavior::TrackAll): object
     {
+        $class = $mapping->concreteClass($row);
+        if ($class !== $mapping->class) $mapping = $this->model->getEntityType($class);
         if ($tracking === QueryTrackingBehavior::NoTracking) {
             $entity = $mapping->hydrate($row);
-            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, $tracking); }
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $this->entityMapping($mapping, $entity), $tracking); }
             if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
             return $entity;
         }
@@ -258,8 +285,8 @@ class DbContext
             if (!in_array($name, $mapping->properties, true)) {
                 throw new \InvalidArgumentException('Unknown update property: '.(string) $name);
             }
-            if (in_array($name, $mapping->keys, true) || ($mapping->columns[$name] ?? null)?->computed) {
-                throw new \InvalidArgumentException('Bulk updates cannot assign primary keys or computed columns.');
+            if ($name === $mapping->hierarchy?->column || in_array($name, $mapping->keys, true) || ($mapping->columns[$name] ?? null)?->computed) {
+                throw new \InvalidArgumentException('Bulk updates cannot assign primary keys, computed columns or discriminators.');
             }
         }
         if ($values !== null) {
@@ -281,7 +308,7 @@ class DbContext
         }
         foreach ($this->provider->streamRows($query->expression()) as $row) {
             $entity = $this->materialize($mapping, $row, QueryTrackingBehavior::NoTracking);
-            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking, QueryFilterRewriter::ignored($query->expression())); }
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $this->entityMapping($mapping, $entity), QueryTrackingBehavior::NoTracking, QueryFilterRewriter::ignored($query->expression())); }
             yield $entity;
         }
     }
@@ -297,7 +324,7 @@ class DbContext
             return null;
         }
         foreach ($entities as $entity) {
-            if ($entity instanceof Entity) { $entity->attachRelations($this, $mapping, QueryTrackingBehavior::NoTracking, QueryFilterRewriter::ignored($query->expression())); }
+            if ($entity instanceof Entity) { $entity->attachRelations($this, $this->entityMapping($mapping, $entity), QueryTrackingBehavior::NoTracking, QueryFilterRewriter::ignored($query->expression())); }
             if ($entity instanceof DynamicEntity) { $this->changeTracker->rememberMapping($mapping, $entity); }
         }
         return $entities;

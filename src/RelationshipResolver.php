@@ -21,7 +21,11 @@ final class RelationshipResolver
 
     public function resolve(EntityMapping $source, string $name): array
     {
-        $override = $this->overrides[$source->class][$this->normalize($name)] ?? null;
+        $override = null;
+        foreach ([$source->class, ...array_values(class_parents($source->class))] as $type) {
+            $override = $this->overrides[$type][$this->normalize($name)] ?? null;
+            if ($override !== null) break;
+        }
         $candidates = [];
         foreach ($this->tables[$source->table] ??= $this->schema->tables($source->table) as $table) {
             foreach ($this->foreignKeys[$table] ??= $this->schema->foreignKeys($table) as $fk) {
@@ -62,6 +66,10 @@ final class RelationshipResolver
     {
         if ($class !== null) { return $this->model->getEntityType($class, $table); }
         $matches = array_values(array_filter($this->model->getEntityTypes(), fn ($m) => $m->table === $table));
+        if ($matches !== [] && $matches[0]->hierarchy !== null
+            && array_filter($matches, fn ($mapping) => $mapping->hierarchy !== $matches[0]->hierarchy) === []) {
+            return $this->model->getEntityType($matches[0]->hierarchy->root);
+        }
         if (count($matches) > 1) { throw new \LogicException('Multiple entity classes map this table; specify targetClass.'); }
         if ($matches !== []) { return $matches[0]; }
         $base = basename(str_replace('.', '/', $table));

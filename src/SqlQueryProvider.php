@@ -97,7 +97,7 @@ final readonly class SqlQueryProvider implements IQueryProvider
     /** @return list<object>|null null selects the existing hydration path. @internal */
     public function executeNoTrackingEntities(Expression $expression, EntityMapping $mapping): ?array
     {
-        if (!$mapping->pdoFetchClassCompatible
+        if ($mapping->hierarchy !== null || !$mapping->pdoFetchClassCompatible
             || $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql'
             || $this->pdo->getAttribute(PDO::ATTR_STRINGIFY_FETCHES)
             || $this->pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES)) {
