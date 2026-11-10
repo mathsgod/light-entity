@@ -7,13 +7,86 @@ API and supported feature set, not an EF Core API compatibility layer.
 
 ## Complex properties
 
-Map a required value object into its owner's table with
-`$builder->entity(Customer::class)->complexProperty('address')`. The object type
-is inferred from a declared property, with `address_city`, `address_street`, etc.
-as default column names. Reads assemble the object; tracking detects member
-changes; queries translate paths such as `$customer->address->city` to columns.
-See [Complex properties](docs/complex-properties.md) for configuration, custom
-column names, schema requirements and the initial supported scope.
+Use a complex property to store a value object in its owner's table without a
+separate entity, primary key or relationship. Configure it explicitly in
+`onModelCreating()`:
+
+```php
+use Light\Entity\{DbContext, Entity, ModelBuilder};
+
+final class Address
+{
+    public function __construct(public string $city, public string $street) {}
+}
+
+final class Customer extends Entity
+{
+    public Address $address;
+}
+
+class AppContext extends DbContext
+{
+    protected function onModelCreating(ModelBuilder $builder): void
+    {
+        $builder->entity(Customer::class)->complexProperty('address');
+    }
+}
+```
+
+The object type is inferred from the declared property. The default columns are
+`address_city` and `address_street`; create them in the `customers` table yourself.
+Configuration does not create or migrate the schema. For a dynamic entity
+property, pass the type explicitly with
+`complexProperty('address', Address::class)`. Custom column names are also
+supported:
+
+```php
+$builder->entity(Customer::class)->complexProperty(
+    'address',
+    Address::class,
+    columns: ['city' => 'city_name', 'street' => 'street_line'],
+);
+```
+
+Queries use the object's member paths. Filtering and ordering execute in SQL,
+and the returned Customer objects contain their Address objects without Include:
+
+```php
+$customers = $db->set(Customer::class)
+    ->where(fn ($c) => $c->address->city == 'Hong Kong')
+    ->orderBy(fn ($c) => $c->address->street)
+    ->toArray();
+
+$customer = $db->set(Customer::class)->find(1);
+$customer->address->city = 'Tokyo';
+$db->saveChanges(); // Updates only the changed leaf columns.
+```
+
+Bulk filters and assignments accept logical member paths. With the default
+mapping, the physical column name is accepted too:
+
+```php
+$db->set(Customer::class)
+    ->where(['address.city' => 'Hong Kong'])
+    ->executeUpdate(['address.city' => 'Tokyo']);
+
+// Equivalent assignment with the default column mapping:
+$db->set(Customer::class)
+    ->where(['address.city' => 'Hong Kong'])
+    ->executeUpdate(['address_city' => 'Tokyo']);
+```
+
+Prefer `address.city` so application code survives changes to the configured
+column name. On entity objects, modify `$customer->address->city`; assigning
+`$customer->address_city` is rejected during value extraction. Bulk updates do
+not refresh already tracked objects or their snapshots.
+
+The initial implementation supports required, single-level objects with public
+mutable scalar members, including nullable scalar members. Nullable complex
+objects, nested objects, readonly members, collections, JSON storage and
+whole-object SQL comparisons/projections are not supported. See
+[Complex properties](docs/complex-properties.md) for full configuration and
+tracking details.
 
 ## Entity inheritance
 
