@@ -5,11 +5,11 @@ Microsoft Entity Framework Core's DbContext, DbSet and unit-of-work patterns.
 This is a PHP implementation with its own
 API and supported feature set, not an EF Core API compatibility layer.
 
-## v1.3.0
+## v1.4.0
 
-Requires `mathsgod/light-linq:^1.3`. Adds default table-per-hierarchy (TPH)
-entity inheritance, opt-in complex properties, and expanded LINQ query support.
-See [CHANGELOG](CHANGELOG.md) for the release details and compatibility note.
+Requires `mathsgod/light-linq:^1.3`. Adds more migration column types for
+MySQL and SQLite, explicit SQL types through `columnType()`, and native MySQL
+`ENUM` and `SET` columns. See [CHANGELOG](CHANGELOG.md) for release details.
 
 ## Complex properties
 

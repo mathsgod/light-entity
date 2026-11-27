@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.0 — 2026-11-27
+
+- Add boolean, text, decimal, date, date-time and binary column methods for
+  MySQL and SQLite migrations.
+- Add `columnType()` for explicit SQL types such as MySQL `JSON` and
+  `VARBINARY(255)`.
+- Add MySQL `ENUM` and `SET` column methods with member and default validation.
+
 ## v1.3.0 — 2026-11-10
 
 ### Complex properties
