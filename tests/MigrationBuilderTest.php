@@ -15,6 +15,58 @@ use PHPUnit\Framework\TestCase;
 
 final class MigrationBuilderTest extends TestCase
 {
+    public function testExplicitColumnTypesApplyToAllColumnOperations(): void
+    {
+        $migration = new MigrationBuilder();
+        $migration->createTable('invoices', fn (TableBuilder $table) =>
+            $table->text('metadata')->columnType('JSON')->nullable());
+        $migration->addColumn('invoices', fn (TableBuilder $table) =>
+            $table->string('receipt')->columnType('VARBINARY(255)'));
+        $migration->alterColumn('invoices', fn (TableBuilder $table) =>
+            $table->integer('total')->columnType('DECIMAL(12, 2)'));
+
+        self::assertSame([
+            "CREATE TABLE `invoices` (\n    `metadata` JSON NULL\n)",
+            'ALTER TABLE `invoices` ADD COLUMN `receipt` VARBINARY(255) NOT NULL',
+            'ALTER TABLE `invoices` MODIFY COLUMN `total` DECIMAL(12, 2) NOT NULL',
+        ], (new MigrationSqlGenerator(new MySqlDialect()))->generate($migration));
+    }
+
+    public function testAdditionalColumnTypesGenerateSqlForBothDialects(): void
+    {
+        $migration = new MigrationBuilder();
+        $migration->createTable('invoices', function (TableBuilder $table): void {
+            $table->boolean('paid')->defaultValue(false);
+            $table->text('notes')->nullable();
+            $table->decimal('amount', precision: 12, scale: 2);
+            $table->date('issued_on');
+            $table->dateTime('paid_at')->nullable();
+        });
+        $migration->addColumn('invoices', fn (TableBuilder $table) =>
+            $table->binary('receipt')->defaultValue("\x00\xff"));
+
+        foreach ([new MySqlDialect(), new SqliteDialect()] as $dialect) {
+            [$create, $add] = (new MigrationSqlGenerator($dialect))->generate($migration);
+            $quote = $dialect instanceof MySqlDialect ? '`' : '"';
+            self::assertSame("CREATE TABLE {$quote}invoices{$quote} (\n"
+                ."    {$quote}paid{$quote} BOOLEAN NOT NULL DEFAULT 0,\n"
+                ."    {$quote}notes{$quote} TEXT NULL,\n"
+                ."    {$quote}amount{$quote} DECIMAL(12,2) NOT NULL,\n"
+                ."    {$quote}issued_on{$quote} DATE NOT NULL,\n"
+                ."    {$quote}paid_at{$quote} DATETIME NULL\n)", $create);
+            $default = $dialect instanceof MySqlDialect ? "(X'00ff')" : "X'00ff'";
+            self::assertSame("ALTER TABLE {$quote}invoices{$quote} ADD COLUMN "
+                ."{$quote}receipt{$quote} BLOB NOT NULL DEFAULT {$default}", $add);
+        }
+
+        $pdo = new \PDO('sqlite::memory:');
+        foreach ((new MigrationSqlGenerator(new SqliteDialect()))->generate($migration) as $sql) {
+            $pdo->exec($sql);
+        }
+        $pdo->exec("INSERT INTO invoices (amount, issued_on) VALUES (12.34, '2026-11-27')");
+        self::assertSame('00FF', $pdo->query('SELECT hex(receipt) FROM invoices')->fetchColumn());
+    }
+
     public function testGeneratesNativeDdlFromTheRequestedCallbackSyntax(): void
     {
         $migration = new MigrationBuilder();
@@ -54,6 +106,9 @@ final class MigrationBuilderTest extends TestCase
 
     public static function invalidDefinitions(): iterable
     {
+        yield 'type with column constraint' => ['users', fn (TableBuilder $t) => $t->text('metadata')->columnType('JSON NOT NULL')];
+        yield 'type with extra column' => ['users', fn (TableBuilder $t) => $t->text('metadata')->columnType('JSON, extra INT')];
+        yield 'explicit identity type' => ['users', fn (TableBuilder $t) => $t->integer('id')->columnType('BIGINT')->primaryKey()->autoIncrement()];
         yield 'empty table' => ['', fn (TableBuilder $t) => $t->integer('id')];
         yield 'empty columns' => ['users', fn (TableBuilder $t) => null];
         yield 'empty column' => ['users', fn (TableBuilder $t) => $t->integer('')];

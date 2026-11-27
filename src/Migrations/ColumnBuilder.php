@@ -11,19 +11,19 @@ final class ColumnBuilder
     private bool $isPrimaryKey = false;
     private bool $hasDefault = false;
     private mixed $defaultValue = null;
+    private ?string $columnType = null;
 
     public function __construct(
         private readonly string $name,
         private readonly string $type,
         private readonly ?int $length = null,
+        private readonly ?int $precision = null,
+        private readonly ?int $scale = null,
     ) {
         if ($name === '' || str_contains($name, "\0")) {
             throw new \InvalidArgumentException('Column names must be non-empty and contain no NUL bytes.');
         }
-        if (!in_array($type, ['integer', 'string'], true)
-            || ($type === 'string' && ($length === null || $length < 1 || $length > 65535))) {
-            throw new \InvalidArgumentException('Use integer or string with a length between 1 and 65535.');
-        }
+        ColumnDefinition::validateType($type, $length, $precision, $scale);
     }
 
     public function nullable(bool $nullable = true): self
@@ -51,9 +51,17 @@ final class ColumnBuilder
         return $this;
     }
 
+    public function columnType(string $type): self
+    {
+        ColumnDefinition::validateColumnType($type);
+        $this->columnType = $type;
+        return $this;
+    }
+
     public function build(): ColumnDefinition
     {
         return new ColumnDefinition($this->name, $this->type, $this->length,
-            $this->isNullable, $this->isAutoIncrement, $this->isPrimaryKey, $this->hasDefault, $this->defaultValue);
+            $this->isNullable, $this->isAutoIncrement, $this->isPrimaryKey, $this->hasDefault, $this->defaultValue,
+            $this->precision, $this->scale, $this->columnType);
     }
 }

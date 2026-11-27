@@ -604,9 +604,22 @@ $db->database->executeMigration($migration);
 $users = $db->set(User::class, 'users');
 ```
 
-`integer()` and `string($name, $length = 255)` create non-nullable columns by
-default. Column options are `nullable()`, `autoIncrement()` and `primaryKey()`;
-each accepts an optional boolean. Mark multiple columns with `primaryKey()` to
+The table builder provides these column methods for MySQL and SQLite.
+
+| Method | SQL type |
+| --- | --- |
+| `integer($name)` | `INT` on MySQL, usually `INTEGER` on SQLite |
+| `string($name, $length = 255)` | `VARCHAR(length)` |
+| `boolean($name)` | `BOOLEAN` |
+| `text($name)` | `TEXT` |
+| `decimal($name, $precision = 18, $scale = 2)` | `DECIMAL(precision, scale)` |
+| `date($name)` | `DATE` |
+| `dateTime($name)` | `DATETIME` |
+| `binary($name)` | `BLOB` |
+
+Columns are non-nullable by default. The `nullable()`, `autoIncrement()` and
+`primaryKey()` options each accept an optional boolean. Use `defaultValue()`
+to set a literal default. Mark multiple columns with `primaryKey()` to
 create a composite primary key. Auto-increment requires an integer primary-key
 column; only one auto-increment column is allowed. SQLite rejects auto-increment
 in composite keys; MySQL requires that column first in the primary key. A plain integer primary key remains manually assigned, including
@@ -618,7 +631,23 @@ tables, duplicate column names, invalid string lengths, nullable primary keys
 and multiple auto-increment columns are rejected before the operation is queued. Table
 names may use `schema.table`; column names are quoted as literal identifiers.
 The database still enforces its own identifier, row-size and type limits.
-SQLite accepts VARCHAR lengths as metadata but does not enforce those lengths.
+SQLite accepts VARCHAR length and DECIMAL precision and scale in type
+declarations without enforcing those limits.
+
+Use `columnType()` to specify the SQL type explicitly. The same option works
+in `createTable()`, `addColumn()` and `alterColumn()` wherever the underlying
+operation is supported.
+
+```php
+$migration->addColumn('invoices', fn (TableBuilder $table) =>
+    $table->text('metadata')->columnType('JSON')->nullable());
+```
+
+The supplied type is emitted as written. Choose a type supported by your
+database. The override accepts a single type name with optional numeric
+arguments or `UNSIGNED`, such as `VARBINARY(255)`, and is unavailable on
+auto-increment columns. JSON serialization remains the application's
+responsibility.
 
 For offline SQL generation, use
 `new MigrationSqlGenerator(new MySqlDialect())` from `Light\Entity\Migrations`

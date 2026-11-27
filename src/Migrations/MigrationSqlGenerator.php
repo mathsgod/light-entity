@@ -61,10 +61,17 @@ final readonly class MigrationSqlGenerator
     private function columnDefinition(ColumnDefinition $column, bool $composite = false): string
     {
         $name = $this->quoteColumn($column->name);
-        $type = $column->type === 'integer'
-            ? ($this->dialect instanceof SqliteDialect ? 'INTEGER' : 'INT')
-            : 'VARCHAR('.$column->length.')';
-        if (!$composite && $column->primaryKey && !$column->autoIncrement
+        $type = $column->columnType ?? match ($column->type) {
+            'integer' => $this->dialect instanceof SqliteDialect ? 'INTEGER' : 'INT',
+            'string' => 'VARCHAR('.$column->length.')',
+            'boolean' => 'BOOLEAN',
+            'text' => 'TEXT',
+            'decimal' => 'DECIMAL('.$column->precision.','.$column->scale.')',
+            'date' => 'DATE',
+            'datetime' => 'DATETIME',
+            'binary' => 'BLOB',
+        };
+        if ($column->columnType === null && !$composite && $column->primaryKey && !$column->autoIncrement
             && $column->type === 'integer' && $this->dialect instanceof SqliteDialect) {
             $type = 'INT'; // INTEGER PRIMARY KEY would imply a rowid-generated key.
         }
@@ -73,7 +80,22 @@ final readonly class MigrationSqlGenerator
         if ($column->autoIncrement) {
             $sql .= $this->dialect instanceof MySqlDialect ? ' AUTO_INCREMENT' : ' AUTOINCREMENT';
         }
-        if ($column->hasDefault) { $sql .= ' DEFAULT '.$this->literal($column->defaultValue); }
+        if ($column->hasDefault) {
+            $value = $column->defaultValue;
+            $typeName = strtoupper(strtok($type, ' ('));
+            $literal = is_string($value) && in_array($typeName, ['BINARY', 'VARBINARY', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB'], true)
+                ? "X'".bin2hex($value)."'"
+                : $this->literal($value);
+            if ($value !== null && $this->dialect instanceof MySqlDialect) {
+                $literal = match ($typeName) {
+                    'JSON' => '(CONVERT('.$literal.' USING utf8mb4))',
+                    'TINYTEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT',
+                    'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB' => '('.$literal.')',
+                    default => $literal,
+                };
+            }
+            $sql .= ' DEFAULT '.$literal;
+        }
         return $sql;
     }
 
