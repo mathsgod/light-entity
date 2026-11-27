@@ -70,6 +70,7 @@ final readonly class MigrationSqlGenerator
             'date' => 'DATE',
             'datetime' => 'DATETIME',
             'binary' => 'BLOB',
+            'enum', 'set' => $this->memberType($column),
         };
         if ($column->columnType === null && !$composite && $column->primaryKey && !$column->autoIncrement
             && $column->type === 'integer' && $this->dialect instanceof SqliteDialect) {
@@ -83,9 +84,12 @@ final readonly class MigrationSqlGenerator
         if ($column->hasDefault) {
             $value = $column->defaultValue;
             $typeName = strtoupper(strtok($type, ' ('));
-            $literal = is_string($value) && in_array($typeName, ['BINARY', 'VARBINARY', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB'], true)
-                ? "X'".bin2hex($value)."'"
-                : $this->literal($value);
+            $literal = match (true) {
+                is_string($value) && $column->values !== [] => $this->memberLiteral($value),
+                is_string($value) && in_array($typeName, ['BINARY', 'VARBINARY', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB'], true)
+                    => "X'".bin2hex($value)."'",
+                default => $this->literal($value),
+            };
             if ($value !== null && $this->dialect instanceof MySqlDialect) {
                 $literal = match ($typeName) {
                     'JSON' => '(CONVERT('.$literal.' USING utf8mb4))',
@@ -97,6 +101,20 @@ final readonly class MigrationSqlGenerator
             $sql .= ' DEFAULT '.$literal;
         }
         return $sql;
+    }
+
+    private function memberType(ColumnDefinition $column): string
+    {
+        $type = strtoupper($column->type);
+        if (!$this->dialect instanceof MySqlDialect) {
+            throw new \LogicException($type.' columns are only supported by the MySQL migration dialect.');
+        }
+        return $type.'('.implode(', ', array_map($this->memberLiteral(...), $column->values)).')';
+    }
+
+    private function memberLiteral(string $value): string
+    {
+        return "'".str_replace("'", "''", $value)."'";
     }
 
     private function columnOperation(ColumnOperation $operation): string

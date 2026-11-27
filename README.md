@@ -616,6 +616,8 @@ The table builder provides these column methods for MySQL and SQLite.
 | `date($name)` | `DATE` |
 | `dateTime($name)` | `DATETIME` |
 | `binary($name)` | `BLOB` |
+| `enum($name, $values)` | MySQL `ENUM` |
+| `set($name, $values)` | MySQL `SET` |
 
 Columns are non-nullable by default. The `nullable()`, `autoIncrement()` and
 `primaryKey()` options each accept an optional boolean. Use `defaultValue()`
@@ -648,6 +650,25 @@ database. The override accepts a single type name with optional numeric
 arguments or `UNSIGNED`, such as `VARBINARY(255)`, and is unavailable on
 auto-increment columns. JSON serialization remains the application's
 responsibility.
+
+Use `enum()` for a single value and `set()` for zero or more values in a
+MySQL column.
+
+```php
+$migration->createTable('invoices', function (TableBuilder $table) {
+    $table->integer('id')->primaryKey()->autoIncrement();
+    $table->enum('status', ['draft', 'paid', 'cancelled'])->defaultValue('draft');
+    $table->set('flags', ['urgent', 'reviewed', 'archived'])->defaultValue('urgent,reviewed');
+});
+```
+
+Pass a non-empty list of distinct strings. The limits are 65,535 members for
+`ENUM` and 64 for `SET`. Members can contain apostrophes. Use values without
+backslashes, control characters or trailing spaces, and keep commas out of
+`SET` members. An `ENUM` default is one declared value. A `SET` default is a
+comma-separated string of declared values, or `''` for an empty set.
+SQLite rejects both methods during SQL generation. These methods define the
+column schema. PHP enum or array conversion belongs in application mapping.
 
 For offline SQL generation, use
 `new MigrationSqlGenerator(new MySqlDialect())` from `Light\Entity\Migrations`

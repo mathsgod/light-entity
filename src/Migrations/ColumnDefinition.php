@@ -7,6 +7,10 @@ namespace Light\Entity\Migrations;
 /** Immutable column metadata captured after the table callback completes. */
 final readonly class ColumnDefinition
 {
+    /** @var list<string> */
+    public array $values;
+
+    /** @param list<string> $values */
     public function __construct(
         public string $name,
         public string $type,
@@ -19,13 +23,18 @@ final readonly class ColumnDefinition
         public ?int $precision = null,
         public ?int $scale = null,
         public ?string $columnType = null,
+        array $values = [],
     ) {
         if ($name === '' || str_contains($name, "\0")) {
             throw new \InvalidArgumentException('Column names must be non-empty and contain no NUL bytes.');
         }
-        self::validateType($type, $length, $precision, $scale);
+        self::validateType($type, $length, $precision, $scale, $values);
+        $this->values = array_map(static fn (string $value): string => $value, $values);
         if ($columnType !== null) {
             self::validateColumnType($columnType);
+            if ($values !== []) {
+                throw new \InvalidArgumentException('ENUM and SET columns cannot override their SQL type.');
+            }
             if ($autoIncrement) {
                 throw new \InvalidArgumentException('Auto-increment requires the default integer column type.');
             }
@@ -45,6 +54,15 @@ final readonly class ColumnDefinition
         if ($autoIncrement && ($type !== 'integer' || !$primaryKey)) {
             throw new \InvalidArgumentException('Auto-increment requires an integer primary key.');
         }
+        if ($values !== [] && $hasDefault && $defaultValue !== null) {
+            if (!is_string($defaultValue)) {
+                throw new \InvalidArgumentException('ENUM and SET defaults must be strings.');
+            }
+            $members = $type === 'enum' ? [$defaultValue] : ($defaultValue === '' ? [] : explode(',', $defaultValue));
+            if (array_diff($members, $values) !== []) {
+                throw new \InvalidArgumentException('ENUM and SET defaults must use declared values.');
+            }
+        }
     }
 
     /** @internal */
@@ -56,9 +74,9 @@ final readonly class ColumnDefinition
     }
 
     /** @internal */
-    public static function validateType(string $type, ?int $length, ?int $precision, ?int $scale): void
+    public static function validateType(string $type, ?int $length, ?int $precision, ?int $scale, array $values = []): void
     {
-        if (!in_array($type, ['integer', 'string', 'boolean', 'text', 'decimal', 'date', 'datetime', 'binary'], true)) {
+        if (!in_array($type, ['integer', 'string', 'boolean', 'text', 'decimal', 'date', 'datetime', 'binary', 'enum', 'set'], true)) {
             throw new \InvalidArgumentException('Unsupported column type.');
         }
         if ($type === 'string' && ($length === null || $length < 1 || $length > 65535)) {
@@ -73,6 +91,30 @@ final readonly class ColumnDefinition
             }
         } elseif ($precision !== null || $scale !== null) {
             throw new \InvalidArgumentException('Precision and scale are only supported for decimal columns.');
+        }
+        if ($type === 'enum' || $type === 'set') {
+            self::validateMembers($type, $values);
+        } elseif ($values !== []) {
+            throw new \InvalidArgumentException('Member lists are only supported for ENUM and SET columns.');
+        }
+    }
+
+    private static function validateMembers(string $type, array $values): void
+    {
+        $limit = $type === 'set' ? 64 : 65535;
+        if (!array_is_list($values) || $values === [] || count($values) > $limit) {
+            throw new \InvalidArgumentException(strtoupper($type)." requires a list of 1 to {$limit} values.");
+        }
+        foreach ($values as $value) {
+            // Keep generated member literals valid with or without NO_BACKSLASH_ESCAPES.
+            if (!is_string($value) || preg_match('/[\x00-\x1f\x7f]/', $value)
+                || str_contains($value, "\\") || str_ends_with($value, ' ')
+                || ($type === 'set' && str_contains($value, ','))) {
+                throw new \InvalidArgumentException('Invalid ENUM or SET member.');
+            }
+        }
+        if (count(array_unique($values, SORT_STRING)) !== count($values)) {
+            throw new \InvalidArgumentException('ENUM and SET members must be distinct.');
         }
     }
 }

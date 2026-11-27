@@ -13,17 +13,19 @@ final class ColumnBuilder
     private mixed $defaultValue = null;
     private ?string $columnType = null;
 
+    /** @param list<string> $values */
     public function __construct(
         private readonly string $name,
         private readonly string $type,
         private readonly ?int $length = null,
         private readonly ?int $precision = null,
         private readonly ?int $scale = null,
+        private readonly array $values = [],
     ) {
         if ($name === '' || str_contains($name, "\0")) {
             throw new \InvalidArgumentException('Column names must be non-empty and contain no NUL bytes.');
         }
-        ColumnDefinition::validateType($type, $length, $precision, $scale);
+        ColumnDefinition::validateType($type, $length, $precision, $scale, $values);
     }
 
     public function nullable(bool $nullable = true): self
@@ -62,6 +64,6 @@ final class ColumnBuilder
     {
         return new ColumnDefinition($this->name, $this->type, $this->length,
             $this->isNullable, $this->isAutoIncrement, $this->isPrimaryKey, $this->hasDefault, $this->defaultValue,
-            $this->precision, $this->scale, $this->columnType);
+            $this->precision, $this->scale, $this->columnType, $this->values);
     }
 }

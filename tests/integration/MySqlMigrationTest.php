@@ -14,6 +14,28 @@ final class MySqlMigrationTest extends MigrationExecutionTest
 {
     use MySqlDatabase;
 
+    public function testEnumAndSetColumnsSupportQuotedMembersAndDefaults(): void
+    {
+        $pdo = $this->connection();
+        $pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES'");
+        $db = new DbContext($pdo);
+        $migration = new MigrationBuilder();
+        $migration->createTable('invoices', function (TableBuilder $table): void {
+            $table->integer('id')->primaryKey();
+            $table->enum('status', ["owner's review", 'paid'])->defaultValue("owner's review");
+        });
+        $migration->addColumn('invoices', fn (TableBuilder $table) =>
+            $table->set('flags', ['urgent', "owner's review"])->defaultValue("urgent,owner's review"));
+        $db->database->executeMigration($migration);
+
+        $pdo->exec('INSERT INTO invoices (id) VALUES (1)');
+        self::assertSame(
+            ["owner's review", "urgent,owner's review"],
+            $pdo->query('SELECT status, flags FROM invoices')->fetch(\PDO::FETCH_NUM)
+        );
+    }
+
+
     public function testDdlDoesNotImplicitlyCommitAnExistingTransaction(): void
     {
         $pdo = $this->connection();

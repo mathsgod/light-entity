@@ -50,6 +50,18 @@ final class TableBuilder
         return $this->columns[] = new ColumnBuilder($name, 'binary');
     }
 
+    /** @param list<string> $values */
+    public function enum(string $name, array $values): ColumnBuilder
+    {
+        return $this->columns[] = new ColumnBuilder($name, 'enum', values: $values);
+    }
+
+    /** @param list<string> $values */
+    public function set(string $name, array $values): ColumnBuilder
+    {
+        return $this->columns[] = new ColumnBuilder($name, 'set', values: $values);
+    }
+
     public function build(string $table): CreateTableOperation
     {
         return new CreateTableOperation($table, array_map(fn ($column) => $column->build(), $this->columns));

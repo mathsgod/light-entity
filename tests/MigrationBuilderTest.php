@@ -15,6 +15,15 @@ use PHPUnit\Framework\TestCase;
 
 final class MigrationBuilderTest extends TestCase
 {
+    public function testSqliteRejectsMySqlMemberColumns(): void
+    {
+        $migration = new MigrationBuilder();
+        $migration->addColumn('invoices', fn (TableBuilder $table) => $table->set('flags', ['urgent']));
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('SET columns are only supported by the MySQL migration dialect.');
+        (new MigrationSqlGenerator(new SqliteDialect()))->generate($migration);
+    }
+
     public function testExplicitColumnTypesApplyToAllColumnOperations(): void
     {
         $migration = new MigrationBuilder();
@@ -106,6 +115,11 @@ final class MigrationBuilderTest extends TestCase
 
     public static function invalidDefinitions(): iterable
     {
+        yield 'empty enum' => ['users', fn (TableBuilder $t) => $t->enum('status', [])];
+        yield 'duplicate enum members' => ['users', fn (TableBuilder $t) => $t->enum('status', ['draft', 'draft'])];
+        yield 'undeclared enum default' => ['users', fn (TableBuilder $t) => $t->enum('status', ['draft'])->defaultValue('paid')];
+        yield 'comma in set member' => ['users', fn (TableBuilder $t) => $t->set('flags', ['urgent,reviewed'])];
+        yield 'backslash in set member' => ['users', fn (TableBuilder $t) => $t->set('flags', ['urgent\\reviewed'])];
         yield 'type with column constraint' => ['users', fn (TableBuilder $t) => $t->text('metadata')->columnType('JSON NOT NULL')];
         yield 'type with extra column' => ['users', fn (TableBuilder $t) => $t->text('metadata')->columnType('JSON, extra INT')];
         yield 'explicit identity type' => ['users', fn (TableBuilder $t) => $t->integer('id')->columnType('BIGINT')->primaryKey()->autoIncrement()];
